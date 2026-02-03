@@ -43,7 +43,7 @@ Ensure the following tools are installed and configured in your local environmen
 #### 1. Repository Setup
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/KlyrhonMiko/pace
 cd pace
 ```
 
