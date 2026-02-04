@@ -113,14 +113,16 @@ export function HeroSection() {
                         </div>
 
                         {/* Floating Card: Career Match */}
-                        <div className="absolute top-[10%] -right-4 lg:right-0 w-48 bg-white/90 backdrop-blur-sm p-4 rounded-2xl shadow-xl shadow-slate-200/50 border border-white/50 animate-bounce-slow z-20">
-                            <div className="flex items-start gap-3">
-                                <div className="mt-1 h-8 w-8 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 shrink-0">
-                                    <Briefcase size={16} />
-                                </div>
-                                <div>
-                                    <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mb-0.5">Job Alerts</p>
-                                    <p className="text-sm font-bold text-slate-900 leading-snug">New Roles Available</p>
+                        <div className="absolute top-[10%] -right-4 lg:right-0 z-20 animate-in fade-in slide-in-from-right-8 duration-1000 delay-300">
+                            <div className="w-48 bg-white/90 backdrop-blur-sm p-4 rounded-2xl shadow-xl shadow-slate-200/50 border border-white/50 animate-bounce-slow">
+                                <div className="flex items-start gap-3">
+                                    <div className="mt-1 h-8 w-8 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 shrink-0">
+                                        <Briefcase size={16} />
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mb-0.5">Job Alerts</p>
+                                        <p className="text-sm font-bold text-slate-900 leading-snug">New Roles Available</p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
