@@ -15,7 +15,7 @@ export function HeroSection() {
                             The P.A.C.E. system bridges <span className="font-semibold text-slate-900">Pamantasan ng Lungsod ng Pasig</span> alumni with premium career opportunities, strategic industry partnerships, and a thriving professional network.
                         </p>
                         <div className="flex flex-wrap gap-4 pt-2">
-                            <Link href="/dashboard/student">
+                            <Link href="/dashboard/alumni">
                                 <Button size="lg" className="h-14 px-8 text-base bg-emerald-700 hover:bg-emerald-800 text-white shadow-lg shadow-emerald-700/20 transition-all hover:-translate-y-0.5 rounded-lg font-semibold group">
                                     Access Portal
                                     <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />

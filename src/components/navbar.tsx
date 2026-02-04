@@ -1,5 +1,5 @@
 import Link from "next/link";
-import Image from "next/image";
+
 import { Button } from "@/components/ui/button";
 
 export function Navbar() {
@@ -8,12 +8,12 @@ export function Navbar() {
       <div className="container mx-auto px-6 h-20 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-3 group">
           <div className="relative h-12 w-12 flex-shrink-0">
-            <Image
+            <img
               src="/plp-logo.png?v=2"
               alt="PLP Logo"
-              fill
+              width="48"
+              height="48"
               className="object-contain drop-shadow-md group-hover:drop-shadow-lg transition-all"
-              unoptimized
             />
           </div>
 
@@ -30,12 +30,12 @@ export function Navbar() {
 
 
         <div className="flex items-center gap-4">
-          <Link href="/dashboard/student">
+          <Link href="/dashboard/alumni">
             <Button variant="ghost" className="hidden sm:inline-flex text-emerald-800 hover:text-emerald-900 hover:bg-emerald-50">
               Sign In
             </Button>
           </Link>
-          <Link href="/dashboard/student">
+          <Link href="/dashboard/alumni">
             <Button className="bg-emerald-700 hover:bg-emerald-800 text-white shadow-sm shadow-emerald-200">
               Get Started
             </Button>

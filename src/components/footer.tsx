@@ -1,5 +1,5 @@
 import Link from "next/link";
-import Image from "next/image";
+
 import { MapPin, Mail, Phone } from "lucide-react";
 
 export function Footer() {
@@ -10,13 +10,13 @@ export function Footer() {
                     {/* Brand Section */}
                     <div className="md:col-span-5 space-y-6">
                         <div className="flex items-center gap-3">
-                            <div className="relative w-12 h-12 shrink-0">
-                                <Image
+                            <div className="relative w-20 h-20 shrink-0">
+                                <img
                                     src="/plp-logo.png?v=2"
                                     alt="PLP Logo"
-                                    fill
+                                    width="80"
+                                    height="80"
                                     className="object-contain"
-                                    unoptimized
                                 />
                             </div>
                             <span className="text-2xl font-black text-white tracking-tighter leading-tight">

@@ -9,7 +9,7 @@ export function CTASection() {
             <div className="container mx-auto px-4 relative z-10 text-center">
                 <h2 className="text-3xl lg:text-4xl font-bold text-white mb-6">Your Future Starts Here.</h2>
                 <p className="text-emerald-100 mb-8 max-w-xl mx-auto text-lg">Join the official P.A.C.E. platform and take the first step towards your dream career.</p>
-                <Link href="/dashboard/student">
+                <Link href="/dashboard/alumni">
                     <Button size="lg" className="bg-white text-emerald-950 hover:bg-emerald-50 font-bold h-14 px-8 rounded-lg shadow-xl shadow-emerald-900/20 transition-all hover:-translate-y-0.5">
                         Join the Network <ArrowRight className="ml-2 h-5 w-5" />
                     </Button>
