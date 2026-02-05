@@ -28,7 +28,7 @@ export default function EventCard({
     };
 
     return (
-        <div className="group relative overflow-hidden rounded-xl border border-slate-100 bg-white transition-all duration-300 hover:border-emerald-200 hover:shadow-lg hover:shadow-emerald-50 hover:scale-[1.01]">
+        <div className="group relative overflow-hidden rounded-xl border border-slate-400/50 bg-white shadow-lg shadow-slate-300/50 transition-all duration-300 hover:border-emerald-500 hover:shadow-xl hover:shadow-emerald-200/50 hover:scale-[1.01]">
             <div className="flex">
                 {/* Date section with enhanced gradient */}
                 <div className="relative flex w-20 flex-col items-center justify-center overflow-hidden bg-gradient-to-br from-emerald-500 via-emerald-600 to-emerald-700 px-4 py-4 text-white">

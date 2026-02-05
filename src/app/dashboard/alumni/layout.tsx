@@ -49,7 +49,7 @@ export default function AlumniLayout({
             <aside
                 className={`
                     fixed inset-y-0 left-0 z-50 w-[272px] transform
-                    bg-white border-r border-slate-200/80
+                    bg-white border-r-2 border-slate-300 shadow-lg shadow-slate-200/50
                     transition-all duration-300 ease-out lg:relative lg:translate-x-0
                     ${sidebarOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full"}
                     flex flex-col overflow-hidden
@@ -212,46 +212,94 @@ export default function AlumniLayout({
 
             {/* Main Content Area */}
             <div className="flex flex-1 flex-col overflow-hidden">
-                {/* Top Header - Enhanced with texture */}
-                <header className="relative flex h-16 items-center justify-between border-b border-slate-200/80 bg-white/90 backdrop-blur-sm px-4 lg:px-6 overflow-hidden">
-                    {/* Subtle header texture */}
-                    <div
-                        className="pointer-events-none absolute inset-0 opacity-[0.02]"
-                        style={{
-                            backgroundImage: 'linear-gradient(90deg, transparent 0%, transparent 50%, rgba(0,0,0,0.02) 50%, rgba(0,0,0,0.02) 100%)',
-                            backgroundSize: '4px 4px'
-                        }}
-                    />
-                    {/* Decorative gradient line at bottom */}
-                    <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
+                {/* Top Header - Modern Professional Design */}
+                <header className="relative flex h-20 items-center justify-between border-b-2 border-slate-300 bg-gradient-to-r from-white via-white to-slate-50 shadow-md shadow-slate-200/50 px-4 lg:px-8 overflow-hidden">
+                    {/* Decorative background elements */}
+                    <div className="pointer-events-none absolute inset-0">
+                        {/* Subtle grid pattern */}
+                        <div
+                            className="absolute inset-0 opacity-[0.03]"
+                            style={{
+                                backgroundImage: 'radial-gradient(circle at 1px 1px, rgb(0,0,0) 0.5px, transparent 0)',
+                                backgroundSize: '20px 20px'
+                            }}
+                        />
+                        {/* Decorative gradient orb */}
+                        <div className="absolute -top-10 right-1/4 w-40 h-40 bg-gradient-to-br from-emerald-100/40 to-transparent rounded-full blur-3xl" />
+                    </div>
 
-                    <div className="relative flex items-center gap-3">
+                    {/* Bottom accent line */}
+                    <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-emerald-500 via-emerald-400 to-transparent" />
+
+                    {/* Left Section - Welcome */}
+                    <div className="relative flex items-center gap-4">
                         <button
-                            className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 lg:hidden"
+                            className="rounded-xl p-2.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-all duration-200 lg:hidden"
                             onClick={() => setSidebarOpen(true)}
                         >
                             <MenuIcon />
                         </button>
-                        <div>
-                            <h1 className="text-base font-semibold text-slate-900">Welcome back, Juan!</h1>
-                            <p className="text-xs text-slate-500 hidden sm:block">Here&apos;s what&apos;s happening with your career journey</p>
+                        <div className="flex items-center gap-4">
+                            {/* Date & Time Badge - Modern Split Design */}
+                            <div className="hidden md:flex items-center gap-0 rounded-xl overflow-hidden shadow-sm border border-slate-200">
+                                {/* Day Number */}
+                                <div className="flex items-center justify-center w-12 h-12 bg-gradient-to-br from-emerald-500 to-emerald-600 text-white">
+                                    <span className="text-xl font-bold">5</span>
+                                </div>
+                                {/* Month & Day */}
+                                <div className="flex flex-col justify-center px-3 py-1.5 bg-white">
+                                    <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">Feb 2026</span>
+                                    <span className="text-[10px] text-slate-500 font-medium">Wednesday</span>
+                                </div>
+                            </div>
+                            <div className="h-8 w-px bg-slate-200 hidden md:block" />
+                            <div>
+                                <h1 className="text-lg font-bold bg-gradient-to-r from-slate-900 via-slate-800 to-slate-600 bg-clip-text text-transparent">Welcome back, Juan!</h1>
+                                <p className="text-sm text-slate-500 hidden sm:block">Here&apos;s what&apos;s happening with your career journey</p>
+                            </div>
                         </div>
                     </div>
 
-                    <div className="relative flex items-center gap-2">
+                    {/* Right Section - Actions */}
+                    <div className="relative flex items-center gap-3">
+                        {/* Search Bar */}
+                        <div className="hidden lg:flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100/80 border border-slate-200 hover:border-slate-300 hover:bg-slate-100 transition-all duration-200 group">
+                            <svg className="h-4 w-4 text-slate-400 group-hover:text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                            <input
+                                type="text"
+                                placeholder="Search jobs, events..."
+                                className="bg-transparent text-sm text-slate-600 placeholder:text-slate-400 focus:outline-none w-40 xl:w-48"
+                            />
+                            <kbd className="hidden xl:flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-slate-200/80 text-[10px] font-medium text-slate-500">
+                                ⌘K
+                            </kbd>
+                        </div>
+
                         {/* Notifications */}
-                        <button className="relative rounded-xl p-2.5 text-slate-400 transition-all duration-200 hover:bg-slate-100 hover:text-slate-600 hover:shadow-sm">
+                        <button className="relative flex items-center justify-center h-10 w-10 rounded-xl bg-slate-100/80 border border-slate-200 text-slate-500 transition-all duration-200 hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-600 hover:shadow-sm">
                             <BellIcon />
-                            <span className="absolute right-2 top-2 flex h-2 w-2">
+                            <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4">
                                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-white" />
+                                <span className="relative inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[9px] font-bold text-white ring-2 ring-white">3</span>
                             </span>
                         </button>
+
+                        {/* Quick Settings */}
+                        <button className="hidden sm:flex items-center justify-center h-10 w-10 rounded-xl bg-slate-100/80 border border-slate-200 text-slate-500 transition-all duration-200 hover:bg-slate-100 hover:border-slate-300 hover:text-slate-600 hover:shadow-sm">
+                            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                        </button>
+
+
                     </div>
                 </header>
 
                 {/* Page Content */}
-                <main className="relative flex-1 overflow-y-auto bg-gradient-to-br from-slate-50 via-slate-50 to-slate-100/80 p-4 lg:p-6">
+                <main className="relative flex-1 overflow-y-auto bg-gradient-to-br from-slate-100 via-slate-100 to-slate-200/80 p-4 lg:p-6">
                     {/* Subtle noise texture overlay */}
                     <div
                         className="pointer-events-none fixed inset-0 z-0 opacity-[0.015]"
