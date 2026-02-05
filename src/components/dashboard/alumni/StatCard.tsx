@@ -14,7 +14,7 @@ export default function StatCard({
     gradient: string;
 }) {
     return (
-        <div className="group relative overflow-hidden rounded-2xl bg-white/80 backdrop-blur-sm border border-slate-200/60 p-6 transition-all duration-500 hover:shadow-xl hover:shadow-slate-200/50 hover:-translate-y-1 hover:border-slate-300/80 hover:bg-white">
+        <div className="group relative overflow-hidden rounded-2xl bg-white border border-slate-400/50 shadow-lg shadow-slate-300/50 p-6 transition-all duration-500 hover:shadow-xl hover:shadow-slate-400/40 hover:-translate-y-1 hover:border-slate-400">
             {/* Outer glow effect on hover */}
             <div className={`absolute -inset-1 ${gradient} opacity-0 blur-xl transition-all duration-500 group-hover:opacity-10 rounded-3xl`} />
 
@@ -81,7 +81,7 @@ export default function StatCard({
 
                 {/* Enhanced icon container with glass effect */}
                 <div className="relative">
-                    <div className={`absolute inset-0 ${gradient} rounded-2xl blur-lg opacity-40 group-hover:opacity-60 transition-opacity duration-500`} />
+                    <div className={`absolute inset-0 ${gradient} rounded-2xl blur-lg opacity-20 group-hover:opacity-35 transition-opacity duration-500`} />
                     <div className={`relative flex h-14 w-14 items-center justify-center rounded-2xl ${gradient} text-white shadow-lg ring-4 ring-white/50`}>
                         {icon}
                     </div>

@@ -32,7 +32,7 @@ export default function JobCard({
     };
 
     return (
-        <div className={`group relative flex items-start gap-4 rounded-xl border border-slate-200/60 bg-white/80 backdrop-blur-sm p-5 transition-all duration-300 hover:border-emerald-200 hover:shadow-lg hover:shadow-emerald-100/50 hover:bg-white overflow-hidden ${className}`}>
+        <div className={`group relative flex items-start gap-4 rounded-xl border border-slate-400/50 bg-white shadow-lg shadow-slate-300/50 p-5 transition-all duration-300 hover:border-emerald-400 hover:shadow-xl hover:shadow-emerald-200/50 overflow-hidden ${className}`}>
             {/* Subtle diagonal texture */}
             <div
                 className="absolute inset-0 opacity-[0.012] pointer-events-none"
