@@ -6,7 +6,7 @@ export function CTASection() {
     return (
         <section className="py-20 bg-emerald-900 relative overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-r from-emerald-800 to-indigo-900 opacity-20" />
-            <div className="container mx-auto px-4 relative z-10 text-center">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center">
                 <h2 className="text-3xl lg:text-4xl font-bold text-white mb-6">Your Future Starts Here.</h2>
                 <p className="text-emerald-100 mb-8 max-w-xl mx-auto text-lg">Join the official P.A.C.E. platform and take the first step towards your dream career.</p>
                 <Link href="/dashboard/alumni">
