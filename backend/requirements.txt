@@ -4,3 +4,7 @@ uvicorn[standard]==0.40.0
 psycopg2-binary==2.9.11
 python-dotenv==1.2.1
 alembic==1.18.3
+passlib==1.7.4
+bcrypt==4.0.1
+PyJWT==2.11.0
+python-multipart==0.0.6

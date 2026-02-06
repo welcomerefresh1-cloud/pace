@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import Session, select
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlmodel import Session, select, func
 from sqlalchemy.exc import IntegrityError
 from core.database import get_session
 from models.users import User, UserType
@@ -8,12 +8,14 @@ from models.student_records import StudentRecord
 from models.alumni import Alumni, AlumniCreate, AlumniUpdate, AlumniPublic
 from models.composite import CompleteAlumniRegistration, CompleteAlumniResponse
 from models.responses import AlumniFullProfile
-from models.errors import ErrorCode
+from models.response_codes import ErrorCode, SuccessCode, StandardResponse
+from models.pagination import PaginatedResponse, PaginationMetadata
+from utils.logging import log_error, log_integrity_error
 
 router = APIRouter(prefix="/alumni", tags=["alumni"])
 
 
-@router.post("/register", response_model=CompleteAlumniResponse)
+@router.post("/register")
 def register_complete_alumni(
     data: CompleteAlumniRegistration,
     session: Session = Depends(get_session)
@@ -61,7 +63,7 @@ def register_complete_alumni(
             user_id=user_id,
             username=data.username,
             email=data.email,
-            password=data.password,  # TODO: Hash this
+            password=data.password,  # Already hashed by validator
             user_type=UserType.USER
         )
         session.add(new_user)
@@ -82,10 +84,14 @@ def register_complete_alumni(
         # Commit everything at once
         session.commit()
         
-        return CompleteAlumniResponse(
-            user_id=new_user.user_id,
-            alumni_id=new_alumni.alumni_id,
-            message="Alumni profile created successfully"
+        return StandardResponse(
+            success=True,
+            code=SuccessCode.ALUMNI_CREATED.value,
+            message="Alumni profile created successfully",
+            data={
+                "user_id": new_user.user_id,
+                "alumni_id": new_alumni.alumni_id
+            }
         )
         
     except IntegrityError as e:
@@ -94,52 +100,74 @@ def register_complete_alumni(
         print(f"DEBUG IntegrityError: {str(e)}")  # Log the actual error
         # Check which field caused the violation by looking at constraint name
         if "ix_users_email" in error_str or "users_email_key" in error_str:
+            log_integrity_error("alumni", "register_complete_alumni", ErrorCode.DUPLICATE_EMAIL.value, "Email already in use", str(e))
             raise HTTPException(
                 status_code=400,
-                detail={
-                    "code": ErrorCode.DUPLICATE_EMAIL.value,
-                    "message": "Email already in use"
-                }
+                detail=StandardResponse(
+                    success=False,
+                    code=ErrorCode.DUPLICATE_EMAIL.value,
+                    message="Email already in use"
+                ).model_dump(mode='json')
             )
         elif "ix_users_username" in error_str or "users_username_key" in error_str:
+            log_integrity_error("alumni", "register_complete_alumni", ErrorCode.DUPLICATE_USERNAME.value, "Username already in use", str(e))
             raise HTTPException(
                 status_code=400,
-                detail={
-                    "code": ErrorCode.DUPLICATE_USERNAME.value,
-                    "message": "Username already in use"
-                }
+                detail=StandardResponse(
+                    success=False,
+                    code=ErrorCode.DUPLICATE_USERNAME.value,
+                    message="Username already in use"
+                ).model_dump(mode='json')
             )
         elif "ix_alumni_alumni_id" in error_str or "alumni_alumni_id_key" in error_str:
+            log_integrity_error("alumni", "register_complete_alumni", ErrorCode.DUPLICATE_ALUMNI_ID.value, "Alumni ID already in use", str(e))
             raise HTTPException(
                 status_code=400,
-                detail={
-                    "code": ErrorCode.DUPLICATE_ALUMNI_ID.value,
-                    "message": "Alumni ID already in use"
-                }
+                detail=StandardResponse(
+                    success=False,
+                    code=ErrorCode.DUPLICATE_ALUMNI_ID.value,
+                    message="Alumni ID already in use"
+                ).model_dump(mode='json')
             )
         else:
+            log_integrity_error("alumni", "register_complete_alumni", ErrorCode.REGISTRATION_FAILED.value, "Registration failed", str(e))
             raise HTTPException(
                 status_code=400,
-                detail={
-                    "code": ErrorCode.REGISTRATION_FAILED.value,
-                    "message": f"Registration failed: {str(e)}"
-                }
+                detail=StandardResponse(
+                    success=False,
+                    code=ErrorCode.REGISTRATION_FAILED.value,
+                    message="Registration failed"
+                ).model_dump(mode='json')
             )
     except Exception as e:
         session.rollback()
+        log_error("alumni", "register_complete_alumni", ErrorCode.REGISTRATION_FAILED.value, f"Unexpected error during registration: {str(e)}", e)
         raise HTTPException(
             status_code=400,
-            detail={
-                "code": ErrorCode.REGISTRATION_FAILED.value,
-                "message": f"Registration failed: {str(e)}"
-            }
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.REGISTRATION_FAILED.value,
+                message="Registration failed"
+            ).model_dump(mode='json')
         )
 
 
-@router.get("", response_model=list[AlumniFullProfile])
-def get_all_alumni(session: Session = Depends(get_session)):
+@router.get("")
+def get_all_alumni(
+    limit: int = Query(10, ge=0, description="Records per page (0 = all records)"),
+    offset: int = Query(0, ge=0, description="Number of records to skip"),
+    session: Session = Depends(get_session)
+):
     """Get all alumni records with full profile information"""
-    alumni_list = session.exec(select(Alumni)).all()
+    # Get total count
+    total = session.exec(select(func.count(Alumni.alumni_code))).one()
+    
+    # Get paginated data
+    query = select(Alumni)
+    if limit > 0:
+        query = query.offset(offset).limit(limit)
+    
+    alumni_list = session.exec(query).all()
     
     result = []
     for alumni in alumni_list:
@@ -190,7 +218,24 @@ def get_all_alumni(session: Session = Depends(get_session)):
         )
         result.append(profile)
     
-    return result
+    # Calculate pagination metadata
+    returned = len(result)
+    has_next = (offset + returned) < total if limit > 0 else False
+    
+    pagination = PaginationMetadata(
+        total=total,
+        limit=limit,
+        offset=offset,
+        returned=returned,
+        has_next=has_next
+    )
+    
+    return StandardResponse(
+        success=True,
+        code=SuccessCode.ALUMNI_LIST_RETRIEVED.value,
+        message=f"Retrieved {returned} alumni",
+        data={"alumni": result, "pagination": pagination}
+    )
 
 
 @router.get("/{alumni_id}", response_model=AlumniFullProfile)
@@ -201,12 +246,14 @@ def get_alumni(alumni_id: str, session: Session = Depends(get_session)):
     ).first()
     
     if not alumni:
+        log_error("alumni", "get_alumni", ErrorCode.ALUMNI_NOT_FOUND.value, f"Alumni {alumni_id} not found")
         raise HTTPException(
             status_code=404,
-            detail={
-                "code": ErrorCode.ALUMNI_NOT_FOUND.value,
-                "message": "Alumni not found"
-            }
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.ALUMNI_NOT_FOUND.value,
+                message="Alumni not found"
+            ).model_dump(mode='json')
         )
     
     # Get related student record (optional)
@@ -268,6 +315,7 @@ def update_alumni(
     ).first()
     
     if not alumni:
+        log_error("alumni", "update_alumni", ErrorCode.ALUMNI_NOT_FOUND.value, f"Alumni {alumni_id} not found")
         raise HTTPException(
             status_code=404,
             detail={
@@ -295,6 +343,7 @@ def update_alumni(
         session.refresh(alumni)
     except IntegrityError as e:
         session.rollback()
+        log_integrity_error("alumni", "update_alumni", ErrorCode.INVALID_INPUT.value, "Update failed", str(e))
         raise HTTPException(
             status_code=400,
             detail={
@@ -355,17 +404,32 @@ def delete_alumni(alumni_id: str, session: Session = Depends(get_session)):
     ).first()
     
     if not alumni:
+        log_error("alumni", "delete_alumni", ErrorCode.ALUMNI_NOT_FOUND.value, f"Alumni {alumni_id} not found")
         raise HTTPException(
             status_code=404,
-            detail={
-                "code": ErrorCode.ALUMNI_NOT_FOUND.value,
-                "message": "Alumni not found"
-            }
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.ALUMNI_NOT_FOUND.value,
+                message="Alumni not found"
+            ).model_dump(mode='json')
         )
     
-    session.delete(alumni)
-    session.commit()
-    
-    return {
-        "message": f"Alumni {alumni_id} deleted successfully"
-    }
+    try:
+        session.delete(alumni)
+        session.commit()
+        return StandardResponse(
+            success=True,
+            code=SuccessCode.ALUMNI_DELETED.value,
+            message=f"Alumni {alumni_id} deleted successfully"
+        )
+    except IntegrityError as e:
+        session.rollback()
+        log_integrity_error("alumni", "delete_alumni", ErrorCode.INVALID_INPUT.value, "Delete failed", str(e))
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Delete failed: Constraint violation or invalid operation"
+            ).model_dump(mode='json')
+        )

@@ -19,8 +19,8 @@ class Alumni(AlumniBase, table=True):
     __tablename__ = "alumni"
     
     alumni_code: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    user_code: Optional[uuid.UUID] = Field(default=None, foreign_key="users.user_code")
-    student_code: Optional[uuid.UUID] = Field(default=None, foreign_key="student_records.student_code", unique=True)
+    user_code: Optional[uuid.UUID] = Field(default=None, foreign_key="users.user_code", ondelete="CASCADE")
+    student_code: Optional[uuid.UUID] = Field(default=None, foreign_key="student_records.student_code", unique=True, ondelete="CASCADE")
     created_at: datetime = Field(default_factory=get_current_time_gmt8)
     updated_at: datetime = Field(default_factory=get_current_time_gmt8)
 

@@ -21,8 +21,8 @@ class StudentRecord(StudentRecordBase, table=True):
     __tablename__ = "student_records"
     
     student_code: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    degree_code: uuid.UUID = Field(foreign_key="degrees.degree_code")
-    alumni_code: uuid.UUID = Field(foreign_key="alumni.alumni_code", unique=True)
+    degree_code: uuid.UUID = Field(foreign_key="degrees.degree_code", ondelete="CASCADE")
+    alumni_code: uuid.UUID = Field(foreign_key="alumni.alumni_code", unique=True, ondelete="CASCADE")
     created_at: datetime = Field(default_factory=get_current_time_gmt8)
 
 

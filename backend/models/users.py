@@ -5,6 +5,7 @@ from enum import Enum
 from sqlmodel import SQLModel, Field
 from pydantic import field_serializer, field_validator
 from utils.timezone import get_current_time_gmt8, GMT8
+from utils.auth import hash_password
 
 
 class UserType(str, Enum):
@@ -31,7 +32,7 @@ class User(UserBase, table=True):
 class UserCreate(SQLModel):
     username: str = Field(max_length=50, unique=True, index=True)
     email: str = Field(max_length=100, unique=True, index=True)
-    password: str = Field(min_length=8, max_length=255)
+    password: str = Field(min_length=8, max_length=72)
     user_type: UserType = Field(default=UserType.USER)
     
     @field_validator('user_type', mode='before')
@@ -40,6 +41,14 @@ class UserCreate(SQLModel):
         """Convert user_type to uppercase for case-insensitive input"""
         if isinstance(v, str):
             return v.upper()
+        return v
+    
+    @field_validator('password', mode='before')
+    @classmethod
+    def hash_password_on_creation(cls, v):
+        """Hash password before storing"""
+        if isinstance(v, str):
+            return hash_password(v)
         return v
 
 
@@ -60,7 +69,21 @@ class UserPublic(UserBase):
 class UserUpdate(SQLModel):
     username: Optional[str] = Field(default=None, max_length=50)
     email: Optional[str] = Field(default=None, max_length=100)
-    password: Optional[str] = Field(default=None, min_length=8, max_length=255)
+    current_password: Optional[str] = Field(default=None, min_length=8, max_length=72)
+    password: Optional[str] = Field(default=None, min_length=8, max_length=72)
+    
+    @field_validator('password')
+    @classmethod
+    def hash_password_field(cls, v):
+        """Hash password before storing if provided"""
+        if v is not None:
+            return hash_password(v)
+        return v
+
+
+class SuccessResponse(SQLModel):
+    code: str
+    message: str
 
 
 class UserLogin(SQLModel):
