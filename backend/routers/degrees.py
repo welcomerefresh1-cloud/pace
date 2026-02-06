@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import Session, select
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlmodel import Session, select, func
 from sqlalchemy.exc import IntegrityError
 from core.database import get_session
 from models.degrees import Degree, DegreeCreate, DegreeUpdate, DegreePublic
-from models.errors import ErrorCode
+from models.response_codes import ErrorCode, SuccessCode, StandardResponse
+from models.pagination import PaginatedResponse, PaginationMetadata
+from utils.logging import log_error, log_integrity_error
 
 router = APIRouter(prefix="/degrees", tags=["degrees"])
 
@@ -20,33 +22,72 @@ def create_degree(
     try:
         session.commit()
         session.refresh(new_degree)
-        return new_degree
+        return StandardResponse(
+            success=True,
+            code=SuccessCode.DEGREE_CREATED.value,
+            message="Degree created successfully",
+            data=DegreePublic.model_validate(new_degree)
+        )
     except IntegrityError as e:
         session.rollback()
         error_str = str(e).lower()
         if "ix_degrees_degree_id" in error_str or "degrees_degree_id_key" in error_str:
+            log_integrity_error("degrees", "create_degree", ErrorCode.DUPLICATE_DEGREE_ID.value, "Degree ID already in use", str(e))
             raise HTTPException(
                 status_code=400,
-                detail={
-                    "code": ErrorCode.DUPLICATE_DEGREE_ID.value,
-                    "message": "Degree ID already in use"
-                }
+                detail=StandardResponse(
+                    success=False,
+                    code=ErrorCode.DUPLICATE_DEGREE_ID.value,
+                    message="Degree ID already in use"
+                ).model_dump(mode='json')
             )
         else:
+            log_integrity_error("degrees", "create_degree", ErrorCode.INVALID_INPUT.value, "Degree creation failed", str(e))
             raise HTTPException(
                 status_code=400,
-                detail={
-                    "code": ErrorCode.INVALID_INPUT.value,
-                    "message": "Degree with these details already exists"
-                }
+                detail=StandardResponse(
+                    success=False,
+                    code=ErrorCode.INVALID_INPUT.value,
+                    message="Degree with these details already exists"
+                ).model_dump(mode='json')
             )
 
 
-@router.get("", response_model=list[DegreePublic])
-def get_all_degrees(session: Session = Depends(get_session)):
-    """Get all degree programs"""
-    degrees = session.exec(select(Degree)).all()
-    return degrees
+@router.get("")
+def get_all_degrees(
+    limit: int = Query(10, ge=0, description="Records per page (0 = all records)"),
+    offset: int = Query(0, ge=0, description="Number of records to skip"),
+    session: Session = Depends(get_session)
+):
+    """Get all degree programs with pagination"""
+    # Get total count
+    total = session.exec(select(func.count(Degree.degree_code))).one()
+    
+    # Get paginated data
+    query = select(Degree)
+    if limit > 0:
+        query = query.offset(offset).limit(limit)
+    
+    degrees = session.exec(query).all()
+    
+    # Calculate pagination metadata
+    returned = len(degrees)
+    has_next = (offset + returned) < total if limit > 0 else False
+    
+    pagination = PaginationMetadata(
+        total=total,
+        limit=limit,
+        offset=offset,
+        returned=returned,
+        has_next=has_next
+    )
+    
+    return StandardResponse(
+        success=True,
+        code=SuccessCode.DEGREES_RETRIEVED.value,
+        message=f"Retrieved {returned} degrees",
+        data={"degrees": [DegreePublic.model_validate(d) for d in degrees], "pagination": pagination}
+    )
 
 
 @router.get("/{degree_id}", response_model=DegreePublic)
@@ -57,12 +98,14 @@ def get_degree(degree_id: str, session: Session = Depends(get_session)):
     ).first()
     
     if not degree:
+        log_error("degrees", "get_degree", ErrorCode.DEGREE_NOT_FOUND.value, f"Degree {degree_id} not found")
         raise HTTPException(
             status_code=404,
-            detail={
-                "code": ErrorCode.DEGREE_NOT_FOUND.value,
-                "message": "Degree not found"
-            }
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.DEGREE_NOT_FOUND.value,
+                message="Degree not found"
+            ).model_dump(mode='json')
         )
     return degree
 
@@ -79,12 +122,14 @@ def update_degree(
     ).first()
     
     if not degree:
+        log_error("degrees", "update_degree", ErrorCode.DEGREE_NOT_FOUND.value, f"Degree {degree_id} not found")
         raise HTTPException(
             status_code=404,
-            detail={
-                "code": ErrorCode.DEGREE_NOT_FOUND.value,
-                "message": "Degree not found"
-            }
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.DEGREE_NOT_FOUND.value,
+                message="Degree not found"
+            ).model_dump(mode='json')
         )
     
     # Update only provided fields
@@ -96,16 +141,35 @@ def update_degree(
     try:
         session.commit()
         session.refresh(degree)
-        return degree
+        return StandardResponse(
+            success=True,
+            code=SuccessCode.DEGREE_UPDATED.value,
+            message="Degree updated successfully",
+            data=DegreePublic.model_validate(degree)
+        )
     except IntegrityError as e:
         session.rollback()
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": ErrorCode.INVALID_INPUT.value,
-                "message": "Update failed: Invalid input or duplicate entry"
-            }
-        )
+        error_str = str(e).lower()
+        if "ix_degrees_degree_id" in error_str or "degrees_degree_id_key" in error_str:
+            log_integrity_error("degrees", "update_degree", ErrorCode.DUPLICATE_DEGREE_ID.value, "Degree ID already in use", str(e))
+            raise HTTPException(
+                status_code=400,
+                detail=StandardResponse(
+                    success=False,
+                    code=ErrorCode.DUPLICATE_DEGREE_ID.value,
+                    message="Degree ID already in use"
+                ).model_dump(mode='json')
+            )
+        else:
+            log_integrity_error("degrees", "update_degree", ErrorCode.INVALID_INPUT.value, "Update failed", str(e))
+            raise HTTPException(
+                status_code=400,
+                detail=StandardResponse(
+                    success=False,
+                    code=ErrorCode.INVALID_INPUT.value,
+                    message="Update failed: Invalid input or constraint violation"
+                ).model_dump(mode='json')
+            )
 
 
 @router.delete("/{degree_id}")
@@ -116,17 +180,32 @@ def delete_degree(degree_id: str, session: Session = Depends(get_session)):
     ).first()
     
     if not degree:
+        log_error("degrees", "delete_degree", ErrorCode.DEGREE_NOT_FOUND.value, f"Degree {degree_id} not found")
         raise HTTPException(
             status_code=404,
-            detail={
-                "code": ErrorCode.DEGREE_NOT_FOUND.value,
-                "message": "Degree not found"
-            }
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.DEGREE_NOT_FOUND.value,
+                message="Degree not found"
+            ).model_dump(mode='json')
         )
     
-    session.delete(degree)
-    session.commit()
-    
-    return {
-        "message": f"Degree {degree_id} deleted successfully"
-    }
+    try:
+        session.delete(degree)
+        session.commit()
+        return StandardResponse(
+            success=True,
+            code=SuccessCode.DEGREE_DELETED.value,
+            message=f"Degree {degree_id} deleted successfully"
+        )
+    except IntegrityError as e:
+        session.rollback()
+        log_integrity_error("degrees", "delete_degree", ErrorCode.INVALID_INPUT.value, "Delete failed", str(e))
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Delete failed: Constraint violation or invalid operation"
+            ).model_dump(mode='json')
+        )

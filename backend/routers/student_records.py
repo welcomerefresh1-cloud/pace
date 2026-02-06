@@ -1,11 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import Session, select
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlmodel import Session, select, func
 from sqlalchemy.exc import IntegrityError
 from core.database import get_session
 from models.student_records import StudentRecord, StudentRecordCreate, StudentRecordUpdate, StudentRecordPublic
 from models.degrees import Degree
 from models.alumni import Alumni
-from models.errors import ErrorCode
+from models.response_codes import ErrorCode, SuccessCode, StandardResponse
+from models.pagination import PaginatedResponse, PaginationMetadata
+from utils.logging import log_error, log_integrity_error
 
 router = APIRouter(prefix="/student-records", tags=["student-records"])
 
@@ -22,12 +24,14 @@ def create_student_record(
     ).first()
     
     if not degree:
+        log_error("student_records", "create_student_record", ErrorCode.DEGREE_NOT_FOUND.value, f"Degree {student_data.degree_id} not found")
         raise HTTPException(
             status_code=404,
-            detail={
-                "code": ErrorCode.DEGREE_NOT_FOUND.value,
-                "message": "Degree not found"
-            }
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.DEGREE_NOT_FOUND.value,
+                message="Degree not found"
+            ).model_dump(mode='json')
         )
     
     # Verify alumni exists
@@ -36,12 +40,14 @@ def create_student_record(
     ).first()
     
     if not alumni:
+        log_error("student_records", "create_student_record", ErrorCode.ALUMNI_NOT_FOUND.value, f"Alumni {student_data.alumni_id} not found")
         raise HTTPException(
             status_code=404,
-            detail={
-                "code": ErrorCode.ALUMNI_NOT_FOUND.value,
-                "message": "Alumni not found"
-            }
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.ALUMNI_NOT_FOUND.value,
+                message="Alumni not found"
+            ).model_dump(mode='json')
         )
     
     # Convert Pydantic model to dict and extract non-StudentRecord fields
@@ -61,41 +67,102 @@ def create_student_record(
         alumni.student_code = new_student.student_code
         session.commit()
         session.refresh(new_student)
-        return new_student
+        return StandardResponse(
+            success=True,
+            code=SuccessCode.STUDENT_RECORD_CREATED.value,
+            message="Student record created successfully",
+            data=StudentRecordPublic.model_validate(new_student)
+        )
     except IntegrityError as e:
         session.rollback()
         error_str = str(e).lower()
         if "ix_student_records_student_id" in error_str or "student_records_student_id_key" in error_str:
+            log_integrity_error("student_records", "create_student_record", ErrorCode.DUPLICATE_STUDENT_ID.value, "Student ID already in use", str(e))
             raise HTTPException(
                 status_code=400,
-                detail={
-                    "code": ErrorCode.DUPLICATE_STUDENT_ID.value,
-                    "message": "Student ID already in use"
-                }
+                detail=StandardResponse(
+                    success=False,
+                    code=ErrorCode.DUPLICATE_STUDENT_ID.value,
+                    message="Student ID already in use"
+                ).model_dump(mode='json')
             )
         elif "student_records_alumni_code_key" in error_str:
+            log_integrity_error("student_records", "create_student_record", ErrorCode.ALUMNI_ALREADY_HAS_STUDENT_RECORD.value, "Alumni already has student record", str(e))
             raise HTTPException(
                 status_code=400,
-                detail={
-                    "code": ErrorCode.ALUMNI_ALREADY_HAS_STUDENT_RECORD.value,
-                    "message": "This alumni already has a student record"
-                }
+                detail=StandardResponse(
+                    success=False,
+                    code=ErrorCode.ALUMNI_ALREADY_HAS_STUDENT_RECORD.value,
+                    message="This alumni already has a student record"
+                ).model_dump(mode='json')
+            )
+        elif "student_records_degree_code_fkey" in error_str or "degree_code" in error_str:
+            log_integrity_error("student_records", "create_student_record", ErrorCode.DEGREE_NOT_FOUND.value, "Specified degree does not exist", str(e))
+            raise HTTPException(
+                status_code=400,
+                detail=StandardResponse(
+                    success=False,
+                    code=ErrorCode.DEGREE_NOT_FOUND.value,
+                    message="Specified degree does not exist"
+                ).model_dump(mode='json')
+            )
+        elif "student_records_alumni_code_fkey" in error_str or "alumni_code" in error_str:
+            log_integrity_error("student_records", "create_student_record", ErrorCode.ALUMNI_NOT_FOUND.value, "Specified alumni does not exist", str(e))
+            raise HTTPException(
+                status_code=400,
+                detail=StandardResponse(
+                    success=False,
+                    code=ErrorCode.ALUMNI_NOT_FOUND.value,
+                    message="Specified alumni does not exist"
+                ).model_dump(mode='json')
             )
         else:
+            log_integrity_error("student_records", "create_student_record", ErrorCode.INVALID_INPUT.value, "Student record creation failed", str(e))
             raise HTTPException(
                 status_code=400,
-                detail={
-                    "code": ErrorCode.INVALID_INPUT.value,
-                    "message": "Student record with these details already exists"
-                }
+                detail=StandardResponse(
+                    success=False,
+                    code=ErrorCode.INVALID_INPUT.value,
+                    message="Student record creation failed: Invalid input or constraint violation"
+                ).model_dump(mode='json')
             )
 
 
-@router.get("", response_model=list[StudentRecordPublic])
-def get_all_student_records(session: Session = Depends(get_session)):
-    """Get all student records"""
-    students = session.exec(select(StudentRecord)).all()
-    return students
+@router.get("")
+def get_all_student_records(
+    limit: int = Query(10, ge=0, description="Records per page (0 = all records)"),
+    offset: int = Query(0, ge=0, description="Number of records to skip"),
+    session: Session = Depends(get_session)
+):
+    """Get all student records with pagination"""
+    # Get total count
+    total = session.exec(select(func.count(StudentRecord.student_code))).one()
+    
+    # Get paginated data
+    query = select(StudentRecord)
+    if limit > 0:
+        query = query.offset(offset).limit(limit)
+    
+    students = session.exec(query).all()
+    
+    # Calculate pagination metadata
+    returned = len(students)
+    has_next = (offset + returned) < total if limit > 0 else False
+    
+    pagination = PaginationMetadata(
+        total=total,
+        limit=limit,
+        offset=offset,
+        returned=returned,
+        has_next=has_next
+    )
+    
+    return StandardResponse(
+        success=True,
+        code=SuccessCode.STUDENT_RECORDS_RETRIEVED.value,
+        message=f"Retrieved {returned} student records",
+        data={"student_records": [StudentRecordPublic.model_validate(s) for s in students], "pagination": pagination}
+    )
 
 @router.get("/{student_id}", response_model=StudentRecordPublic)
 def get_student_record(student_id: str, session: Session = Depends(get_session)):
@@ -106,12 +173,14 @@ def get_student_record(student_id: str, session: Session = Depends(get_session))
     ).first()
 
     if not student:
+        log_error("student_records", "get_student_record", ErrorCode.STUDENT_RECORD_NOT_FOUND.value, f"Student record {student_id} not found")
         raise HTTPException(
             status_code=404,
-            detail={
-                "code": ErrorCode.STUDENT_RECORD_NOT_FOUND.value,
-                "message": "Student record not found"
-            }
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.STUDENT_RECORD_NOT_FOUND.value,
+                message="Student record not found"
+            ).model_dump(mode='json')
         )
     return student
 
@@ -128,12 +197,14 @@ def update_student_record(
     ).first()
     
     if not student:
+        log_error("student_records", "update_student_record", ErrorCode.STUDENT_RECORD_NOT_FOUND.value, f"Student record {student_id} not found")
         raise HTTPException(
             status_code=404,
-            detail={
-                "code": ErrorCode.STUDENT_RECORD_NOT_FOUND.value,
-                "message": "Student record not found"
-            }
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.STUDENT_RECORD_NOT_FOUND.value,
+                message="Student record not found"
+            ).model_dump(mode='json')
         )
     
     # If alumni_id is provided, verify it exists and update the link
@@ -143,12 +214,14 @@ def update_student_record(
         ).first()
         
         if not alumni:
+            log_error("student_records", "update_student_record", ErrorCode.ALUMNI_NOT_FOUND.value, f"Alumni {student_data.alumni_id} not found")
             raise HTTPException(
                 status_code=404,
-                detail={
-                    "code": ErrorCode.ALUMNI_NOT_FOUND.value,
-                    "message": "Alumni not found"
-                }
+                detail=StandardResponse(
+                    success=False,
+                    code=ErrorCode.ALUMNI_NOT_FOUND.value,
+                    message="Alumni not found"
+                ).model_dump(mode='json')
             )
         
         # Update student's alumni_code link and alumni's student_code for backwards compatibility
@@ -177,25 +250,64 @@ def update_student_record(
     try:
         session.commit()
         session.refresh(student)
-        return student
+        return StandardResponse(
+            success=True,
+            code=SuccessCode.STUDENT_RECORD_UPDATED.value,
+            message="Student record updated successfully",
+            data=StudentRecordPublic.model_validate(student)
+        )
     except IntegrityError as e:
         session.rollback()
         error_str = str(e).lower()
         if "student_records_alumni_code_key" in error_str:
+            log_integrity_error("student_records", "update_student_record", ErrorCode.ALUMNI_ALREADY_HAS_STUDENT_RECORD.value, "Alumni already has student record", str(e))
             raise HTTPException(
                 status_code=400,
-                detail={
-                    "code": ErrorCode.ALUMNI_ALREADY_HAS_STUDENT_RECORD.value,
-                    "message": "This alumni already has a student record"
-                }
+                detail=StandardResponse(
+                    success=False,
+                    code=ErrorCode.ALUMNI_ALREADY_HAS_STUDENT_RECORD.value,
+                    message="This alumni already has a student record"
+                ).model_dump(mode='json')
+            )
+        elif "student_records_degree_code_fkey" in error_str or "degree_code" in error_str:
+            log_integrity_error("student_records", "update_student_record", ErrorCode.DEGREE_NOT_FOUND.value, "Specified degree does not exist", str(e))
+            raise HTTPException(
+                status_code=400,
+                detail=StandardResponse(
+                    success=False,
+                    code=ErrorCode.DEGREE_NOT_FOUND.value,
+                    message="Specified degree does not exist"
+                ).model_dump(mode='json')
+            )
+        elif "student_records_alumni_code_fkey" in error_str or "alumni_code" in error_str:
+            log_integrity_error("student_records", "update_student_record", ErrorCode.ALUMNI_NOT_FOUND.value, "Specified alumni does not exist", str(e))
+            raise HTTPException(
+                status_code=400,
+                detail=StandardResponse(
+                    success=False,
+                    code=ErrorCode.ALUMNI_NOT_FOUND.value,
+                    message="Specified alumni does not exist"
+                ).model_dump(mode='json')
+            )
+        elif "ix_student_records_student_id" in error_str or "student_records_student_id_key" in error_str:
+            log_integrity_error("student_records", "update_student_record", ErrorCode.DUPLICATE_STUDENT_ID.value, "Student ID already in use", str(e))
+            raise HTTPException(
+                status_code=400,
+                detail=StandardResponse(
+                    success=False,
+                    code=ErrorCode.DUPLICATE_STUDENT_ID.value,
+                    message="Student ID already in use"
+                ).model_dump(mode='json')
             )
         else:
+            log_integrity_error("student_records", "update_student_record", ErrorCode.INVALID_INPUT.value, "Update failed", str(e))
             raise HTTPException(
                 status_code=400,
-                detail={
-                    "code": ErrorCode.INVALID_INPUT.value,
-                    "message": "Update failed: Invalid input or duplicate entry"
-                }
+                detail=StandardResponse(
+                    success=False,
+                    code=ErrorCode.INVALID_INPUT.value,
+                    message="Update failed: Invalid input or constraint violation"
+                ).model_dump(mode='json')
             )
 
 
@@ -207,17 +319,31 @@ def delete_student_record(student_id: str, session: Session = Depends(get_sessio
     ).first()
     
     if not student:
+        log_error("student_records", "delete_student_record", ErrorCode.STUDENT_RECORD_NOT_FOUND.value, f"Student record {student_id} not found")
         raise HTTPException(
             status_code=404,
-            detail={
-                "code": ErrorCode.STUDENT_RECORD_NOT_FOUND.value,
-                "message": "Student record not found"
-            }
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.STUDENT_RECORD_NOT_FOUND.value,
+                message="Student record not found"
+            ).model_dump(mode='json')
         )
     
-    session.delete(student)
-    session.commit()
-    
-    return {
-        "message": f"Student record {student_id} deleted successfully"
-    }
+    try:
+        session.delete(student)
+        session.commit()
+        return StandardResponse(
+            success=True,
+            code=SuccessCode.STUDENT_RECORD_DELETED.value,
+            message=f"Student record {student_id} deleted successfully"
+        )
+    except IntegrityError as e:
+        session.rollback()
+        log_integrity_error("student_records", "delete_student_record", ErrorCode.INVALID_INPUT.value, "Delete failed", str(e))
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": ErrorCode.INVALID_INPUT.value,
+                "message": "Delete failed: Constraint violation or invalid operation"
+            }
+        )

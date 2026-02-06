@@ -16,7 +16,7 @@ class Skills(SkillsBase, table=True):
     __tablename__ = "skills"
     
     skill_code: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    alumni_code: uuid.UUID = Field(foreign_key="alumni.alumni_code")
+    alumni_code: uuid.UUID = Field(foreign_key="alumni.alumni_code", ondelete="CASCADE")
     created_at: datetime = Field(default_factory=get_current_time_gmt8)
 
 
@@ -47,7 +47,7 @@ class SkillsList(SkillsListBase, table=True):
     __tablename__ = "skills_list"
     
     sl_code: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    skill_code: uuid.UUID = Field(foreign_key="skills.skill_code")
+    skill_code: uuid.UUID = Field(foreign_key="skills.skill_code", ondelete="CASCADE")
 
 
 class SkillsListCreate(SkillsListBase):
