@@ -1,7 +1,5 @@
 from typing import Optional
 from sqlmodel import SQLModel
-from models.users import UserType
-import uuid
 
 
 class CompleteAlumniRegistration(SQLModel):
@@ -10,17 +8,6 @@ class CompleteAlumniRegistration(SQLModel):
     username: str
     email: str
     password: str
-    
-    # Student Record fields
-    student_id: str
-    year_graduated: int
-    gwa: float
-    avg_prof_grade: Optional[float] = None
-    avg_elec_grade: Optional[float] = None
-    ojt_grade: Optional[float] = None
-    leadership_pos: Optional[bool] = None
-    act_member_pos: Optional[bool] = None
-    degree_id: str  # Human-readable degree ID (e.g., 'DEG-001')
     
     # Alumni fields (alumni_id is auto-generated)
     last_name: str
@@ -32,6 +19,5 @@ class CompleteAlumniRegistration(SQLModel):
 
 class CompleteAlumniResponse(SQLModel):
     user_id: str
-    student_id: str
     alumni_id: str
     message: str

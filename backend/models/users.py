@@ -57,6 +57,12 @@ class UserPublic(UserBase):
         return gmt8_time.strftime('%Y-%m-%d %H:%M:%S')
 
 
+class UserUpdate(SQLModel):
+    username: Optional[str] = Field(default=None, max_length=50)
+    email: Optional[str] = Field(default=None, max_length=100)
+    password: Optional[str] = Field(default=None, min_length=8, max_length=255)
+
+
 class UserLogin(SQLModel):
     username: str
     password: str

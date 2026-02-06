@@ -21,9 +21,9 @@ class AlumniFullProfile(SQLModel):
     email: Optional[str]
     
     # Student record info
-    student_id: str
-    year_graduated: int
-    gwa: float
+    student_id: Optional[str]
+    year_graduated: Optional[int]
+    gwa: Optional[float]
     avg_prof_grade: Optional[float]
     avg_elec_grade: Optional[float]
     ojt_grade: Optional[float]
@@ -31,8 +31,8 @@ class AlumniFullProfile(SQLModel):
     act_member_pos: Optional[bool]
     
     # Degree info
-    degree_id: str
-    degree_name: str
+    degree_id: Optional[str]
+    degree_name: Optional[str]
     
     # Timestamps
     created_at: datetime

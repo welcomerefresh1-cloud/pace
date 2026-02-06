@@ -25,5 +25,9 @@ class DegreeCreate(DegreeBase):
         return v
 
 
+class DegreeUpdate(SQLModel):
+    degree_name: Optional[str] = Field(default=None, max_length=100)
+
+
 class DegreePublic(DegreeBase):
     pass
