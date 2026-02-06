@@ -1,12 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
+from sqlalchemy.exc import IntegrityError
 from core.database import get_session
-from models.users import User
+from models.users import User, UserType
 from models.degrees import Degree
 from models.student_records import StudentRecord
 from models.alumni import Alumni, AlumniCreate, AlumniPublic
 from models.composite import CompleteAlumniRegistration, CompleteAlumniResponse
 from models.responses import AlumniFullProfile
+from models.errors import ErrorCode
 
 router = APIRouter(prefix="/alumni", tags=["alumni"])
 
@@ -30,11 +32,18 @@ def register_complete_alumni(
             select(Degree).where(Degree.degree_id == data.degree_id)
         ).first()
         if not degree:
-            raise HTTPException(status_code=404, detail=f"Degree with ID '{data.degree_id}' not found")
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": ErrorCode.DEGREE_NOT_FOUND.value,
+                    "message": f"Degree with ID '{data.degree_id}' not found"
+                }
+            )
         
-        #generate user_id
+        #generate user_id based
+        user_type = UserType.USER
         last_user = session.exec(
-            select(User).where(User.user_id.like("USER-%")).order_by(User.user_id.desc())
+            select(User).where(User.user_type == user_type).order_by(User.user_id.desc())
         ).first()
         
         #auto increment user_id
@@ -65,7 +74,8 @@ def register_complete_alumni(
             user_id=user_id,
             username=data.username,
             email=data.email,
-            password=data.password  # TODO: Hash this
+            password=data.password,  # TODO: Hash this
+            user_type=UserType.USER
         )
         session.add(new_user)
         session.flush()  # Get UUID without committing
@@ -108,9 +118,59 @@ def register_complete_alumni(
             message="Alumni profile created successfully"
         )
         
+    except IntegrityError as e:
+        session.rollback()
+        error_str = str(e).lower()
+        # Check which field caused the violation by looking at constraint name
+        if "ix_users_email" in error_str or "users_email_key" in error_str:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": ErrorCode.DUPLICATE_EMAIL.value,
+                    "message": "Email already in use"
+                }
+            )
+        elif "ix_users_username" in error_str or "users_username_key" in error_str:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": ErrorCode.DUPLICATE_USERNAME.value,
+                    "message": "Username already in use"
+                }
+            )
+        elif "ix_student_records_student_id" in error_str or "student_records_student_id_key" in error_str:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": ErrorCode.DUPLICATE_STUDENT_ID.value,
+                    "message": "Student ID already in use"
+                }
+            )
+        elif "ix_alumni_alumni_id" in error_str or "alumni_alumni_id_key" in error_str:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": ErrorCode.DUPLICATE_ALUMNI_ID.value,
+                    "message": "Alumni ID already in use"
+                }
+            )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": ErrorCode.REGISTRATION_FAILED.value,
+                    "message": "Registration failed: Duplicate entry"
+                }
+            )
     except Exception as e:
         session.rollback()
-        raise HTTPException(status_code=400, detail=f"Registration failed: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": ErrorCode.REGISTRATION_FAILED.value,
+                "message": f"Registration failed: {str(e)}"
+            }
+        )
 
 
 @router.get("", response_model=list[AlumniFullProfile])
@@ -174,7 +234,13 @@ def get_alumni(alumni_id: str, session: Session = Depends(get_session)):
     ).first()
     
     if not alumni:
-        raise HTTPException(status_code=404, detail="Alumni not found")
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": ErrorCode.ALUMNI_NOT_FOUND.value,
+                "message": "Alumni not found"
+            }
+        )
     
     # Get related student record
     student = session.exec(

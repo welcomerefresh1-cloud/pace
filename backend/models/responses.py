@@ -1,6 +1,7 @@
 from typing import Optional
 from datetime import datetime
 from sqlmodel import SQLModel
+from pydantic import field_serializer
 
 
 class AlumniFullProfile(SQLModel):
@@ -35,3 +36,8 @@ class AlumniFullProfile(SQLModel):
     # Timestamps
     created_at: datetime
     updated_at: datetime
+    
+    @field_serializer('created_at', 'updated_at')
+    def serialize_datetime(self, value: datetime) -> str:
+        """Format datetime as YYYY-MM-DD HH:MM:SS without microseconds"""
+        return value.strftime('%Y-%m-%d %H:%M:%S')

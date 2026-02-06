@@ -1,11 +1,12 @@
 from typing import Optional
 from sqlmodel import SQLModel
+from models.users import UserType
 import uuid
 
 
 class CompleteAlumniRegistration(SQLModel):
     
-    # User fields (user_id is auto-generated)
+    # User fields (user_id is auto-generated, user_type is always USER)
     username: str
     email: str
     password: str
