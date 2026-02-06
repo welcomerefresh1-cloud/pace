@@ -1,9 +1,9 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from sqlmodel import SQLModel, Field
 from pydantic import field_serializer
-from utils.timezone import get_current_time_gmt8
+from utils.timezone import get_current_time_gmt8, GMT8
 
 
 class StudentRecordBase(SQLModel):
@@ -34,5 +34,9 @@ class StudentRecordPublic(StudentRecordBase):
     
     @field_serializer('created_at')
     def serialize_datetime(self, value: datetime) -> str:
-        """Format datetime as YYYY-MM-DD HH:MM:SS without microseconds"""
-        return value.strftime('%Y-%m-%d %H:%M:%S')
+        """Convert to GMT+8 and format as YYYY-MM-DD HH:MM:SS without microseconds"""
+        # Convert UTC datetime to GMT+8
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        gmt8_time = value.astimezone(GMT8)
+        return gmt8_time.strftime('%Y-%m-%d %H:%M:%S')
