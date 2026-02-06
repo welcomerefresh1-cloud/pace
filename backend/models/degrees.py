@@ -1,6 +1,7 @@
 import uuid
 from typing import Optional
 from sqlmodel import SQLModel, Field
+from pydantic import field_validator
 
 
 class DegreeBase(SQLModel):
@@ -15,8 +16,18 @@ class Degree(DegreeBase, table=True):
 
 
 class DegreeCreate(DegreeBase):
-    pass
+    @field_validator('degree_id', mode='before')
+    @classmethod
+    def capitalize_degree_id(cls, v):
+        """Convert degree_id to uppercase"""
+        if isinstance(v, str):
+            return v.upper()
+        return v
+
+
+class DegreeUpdate(SQLModel):
+    degree_name: Optional[str] = Field(default=None, max_length=100)
 
 
 class DegreePublic(DegreeBase):
-    degree_code: uuid.UUID
+    pass
