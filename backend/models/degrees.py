@@ -19,4 +19,4 @@ class DegreeCreate(DegreeBase):
 
 
 class DegreePublic(DegreeBase):
-    degree_code: uuid.UUID
+    pass

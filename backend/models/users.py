@@ -23,7 +23,6 @@ class UserCreate(UserBase):
 
 
 class UserPublic(UserBase):
-    user_code: uuid.UUID
     created_at: datetime
 
 

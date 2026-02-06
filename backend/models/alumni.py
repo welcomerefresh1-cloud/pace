@@ -29,9 +29,6 @@ class AlumniCreate(AlumniBase):
 
 
 class AlumniPublic(AlumniBase):
-    alumni_code: uuid.UUID
-    user_code: Optional[uuid.UUID]
-    student_code: uuid.UUID
     created_at: datetime
     updated_at: datetime
 

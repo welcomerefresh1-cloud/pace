@@ -28,6 +28,4 @@ class StudentRecordCreate(StudentRecordBase):
 
 
 class StudentRecordPublic(StudentRecordBase):
-    student_code: uuid.UUID
-    degree_code: uuid.UUID
     created_at: datetime

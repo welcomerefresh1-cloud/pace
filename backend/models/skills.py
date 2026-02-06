@@ -23,8 +23,6 @@ class SkillsCreate(SkillsBase):
 
 
 class SkillsPublic(SkillsBase):
-    skill_code: uuid.UUID
-    alumni_code: uuid.UUID
     created_at: datetime
 
 
@@ -46,5 +44,4 @@ class SkillsListCreate(SkillsListBase):
 
 
 class SkillsListPublic(SkillsListBase):
-    sl_code: uuid.UUID
-    skill_code: uuid.UUID
+    pass

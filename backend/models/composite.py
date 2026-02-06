@@ -30,7 +30,7 @@ class CompleteAlumniRegistration(SQLModel):
 
 
 class CompleteAlumniResponse(SQLModel):
-    user_code: uuid.UUID
-    student_code: uuid.UUID
-    alumni_code: uuid.UUID
+    user_id: str
+    student_id: str
+    alumni_id: str
     message: str
