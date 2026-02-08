@@ -4,6 +4,7 @@ from typing import Optional, Any
 from datetime import datetime
 from utils.timezone import get_current_time_gmt8
 
+# Response codes for API endpoints
 
 class ErrorCode(str, Enum):
     """Error codes for API responses"""
