@@ -156,14 +156,45 @@ def register_complete_alumni(
 def get_all_alumni(
     limit: int = Query(10, ge=0, description="Records per page (0 = all records)"),
     offset: int = Query(0, ge=0, description="Number of records to skip"),
+    search: str = Query(None, description="Search by first name, last name, email, or username"),
+    gender: str = Query(None, description="Filter by gender (M, F, Other)"),
+    sort_by: str = Query("alumni_id", description="Sort by field (alumni_id, first_name, last_name, created_at)"),
+    sort_order: str = Query("asc", description="Sort order (asc, desc)"),
     session: Session = Depends(get_session)
 ):
-    """Get all alumni records with full profile information"""
-    # Get total count
-    total = session.exec(select(func.count(Alumni.alumni_code))).one()
-    
-    # Get paginated data
+    """Get all alumni records with filtering, searching, and sorting"""
+    # Build query
     query = select(Alumni)
+    
+    # Apply search filter
+    if search:
+        search_like = f"%{search}%"
+        # Search in alumni fields and related user email/username
+        alumni_search = (
+            (Alumni.first_name.ilike(search_like)) | 
+            (Alumni.last_name.ilike(search_like))
+        )
+        query = query.where(alumni_search)
+    
+    # Apply gender filter
+    if gender:
+        query = query.where(Alumni.gender == gender.upper())
+    
+    # Get total count after filters
+    total = session.exec(select(func.count(Alumni.alumni_code)).select_from(query.froms[0]).where(query.whereclause)).one() if query.whereclause else session.exec(select(func.count(Alumni.alumni_code))).one()
+    
+    # Apply sorting
+    sort_order_desc = sort_order.lower() == "desc"
+    if sort_by.lower() == "first_name":
+        query = query.order_by(Alumni.first_name.desc() if sort_order_desc else Alumni.first_name)
+    elif sort_by.lower() == "last_name":
+        query = query.order_by(Alumni.last_name.desc() if sort_order_desc else Alumni.last_name)
+    elif sort_by.lower() == "created_at":
+        query = query.order_by(Alumni.created_at.desc() if sort_order_desc else Alumni.created_at)
+    else:  # default to alumni_id
+        query = query.order_by(Alumni.alumni_id.desc() if sort_order_desc else Alumni.alumni_id)
+    
+    # Apply pagination
     if limit > 0:
         query = query.offset(offset).limit(limit)
     

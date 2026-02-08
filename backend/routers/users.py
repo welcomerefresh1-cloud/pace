@@ -100,20 +100,48 @@ def create_user(
 def get_all_users(
     limit: int = Query(10, ge=0, description="Records per page (0 = all records)"),
     offset: int = Query(0, ge=0, description="Number of records to skip"),
+    search: str = Query(None, description="Search by username or email"),
+    user_type: str = Query(None, description="Filter by user type (USER, STAFF, ADMIN)"),
+    sort_by: str = Query("user_id", description="Sort by field (user_id, username, email, created_at)"),
+    sort_order: str = Query("asc", description="Sort order (asc, desc)"),
     session: Session = Depends(get_session)
 ):
-    """Get all users with pagination"""
-    # Get total count
-    total = session.exec(select(func.count(User.user_code))).one()
-    
-    # Get paginated data
+    """Get all users with filtering, searching, and sorting"""
+    # Build query
     query = select(User)
+    
+    # Apply search filter
+    if search:
+        search_like = f"%{search}%"
+        query = query.where(
+            (User.username.ilike(search_like)) | (User.email.ilike(search_like))
+        )
+    
+    # Apply user_type filter
+    if user_type:
+        query = query.where(User.user_type == user_type.upper())
+    
+    # Get total count after filters
+    total = session.exec(select(func.count(User.user_code)).select_from(query.froms[0]).where(query.whereclause)).one() if query.whereclause else session.exec(select(func.count(User.user_code))).one()
+    
+    # Apply sorting
+    sort_order_desc = sort_order.lower() == "desc"
+    if sort_by.lower() == "username":
+        query = query.order_by(User.username.desc() if sort_order_desc else User.username)
+    elif sort_by.lower() == "email":
+        query = query.order_by(User.email.desc() if sort_order_desc else User.email)
+    elif sort_by.lower() == "created_at":
+        query = query.order_by(User.created_at.desc() if sort_order_desc else User.created_at)
+    else:  # default to user_id
+        query = query.order_by(User.user_id.desc() if sort_order_desc else User.user_id)
+    
+    # Apply pagination
     if limit > 0:
         query = query.offset(offset).limit(limit)
     
     users = session.exec(query).all()
     
-    # Convert User objects to UserPublic (excludes password, user_code)
+    # Convert User objects to UserPublic
     public_users = [UserPublic.model_validate(user) for user in users]
     
     # Calculate pagination metadata

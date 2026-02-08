@@ -99,14 +99,37 @@ def create_college_dept(
 def get_all_college_depts(
     limit: int = Query(10, ge=0, description="Records per page (0 = all records)"),
     offset: int = Query(0, ge=0, description="Number of records to skip"),
+    search: str = Query(None, description="Search by abbreviation or name"),
+    sort_by: str = Query("college_dept_id", description="Sort by field (college_dept_id, college_dept_abbv, college_dept_name)"),
+    sort_order: str = Query("asc", description="Sort order (asc, desc)"),
     session: Session = Depends(get_session)
 ):
-    """Get all college departments with pagination"""
-    # Get total count
-    total = session.exec(select(func.count(CollegeDept.college_dept_code))).one()
-    
-    # Get paginated data
+    """Get all college departments with filtering, searching, and sorting"""
+    # Build query
     query = select(CollegeDept)
+    
+    # Apply search filter
+    if search:
+        search_like = f"%{search}%"
+        query = query.where(
+            (CollegeDept.college_dept_abbv.ilike(search_like)) | 
+            (CollegeDept.college_dept_name.ilike(search_like)) |
+            (CollegeDept.college_dept_desc.ilike(search_like))
+        )
+    
+    # Get total count after filters
+    total = session.exec(select(func.count(CollegeDept.college_dept_code)).select_from(query.froms[0]).where(query.whereclause)).one() if query.whereclause else session.exec(select(func.count(CollegeDept.college_dept_code))).one()
+    
+    # Apply sorting
+    sort_order_desc = sort_order.lower() == "desc"
+    if sort_by.lower() == "college_dept_abbv":
+        query = query.order_by(CollegeDept.college_dept_abbv.desc() if sort_order_desc else CollegeDept.college_dept_abbv)
+    elif sort_by.lower() == "college_dept_name":
+        query = query.order_by(CollegeDept.college_dept_name.desc() if sort_order_desc else CollegeDept.college_dept_name)
+    else:  # default to college_dept_id
+        query = query.order_by(CollegeDept.college_dept_id.desc() if sort_order_desc else CollegeDept.college_dept_id)
+    
+    # Apply pagination
     if limit > 0:
         query = query.offset(offset).limit(limit)
     
