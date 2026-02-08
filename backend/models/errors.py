@@ -1,6 +1,7 @@
 from enum import Enum
 from sqlmodel import SQLModel
 
+# DEPRECATED
 
 class ErrorCode(str, Enum):
     """Custom error codes for API responses"""

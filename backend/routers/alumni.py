@@ -3,7 +3,7 @@ from sqlmodel import Session, select, func
 from sqlalchemy.exc import IntegrityError
 from core.database import get_session
 from models.users import User, UserType
-from models.degrees import Degree
+from models.courses import Course
 from models.student_records import StudentRecord
 from models.alumni import Alumni, AlumniCreate, AlumniUpdate, AlumniPublic
 from models.composite import CompleteAlumniRegistration, CompleteAlumniResponse
@@ -173,16 +173,16 @@ def get_all_alumni(
     for alumni in alumni_list:
         # Get related student record (optional)
         student = None
-        degree = None
+        course = None
         if alumni.student_code:
             student = session.exec(
                 select(StudentRecord).where(StudentRecord.student_code == alumni.student_code)
             ).first()
             
-            # Get related degree (only if student exists)
+            # Get related course (only if student exists)
             if student:
-                degree = session.exec(
-                    select(Degree).where(Degree.degree_code == student.degree_code)
+                course = session.exec(
+                    select(Course).where(Course.course_code == student.course_code)
                 ).first()
         
         # Get related user (if exists)
@@ -211,8 +211,8 @@ def get_all_alumni(
             ojt_grade=student.ojt_grade if student else None,
             leadership_pos=student.leadership_pos if student else None,
             act_member_pos=student.act_member_pos if student else None,
-            degree_id=degree.degree_id if degree else None,
-            degree_name=degree.degree_name if degree else None,
+            course_id=course.course_id if course else None,
+            course_name=course.course_name if course else None,
             created_at=alumni.created_at,
             updated_at=alumni.updated_at
         )
@@ -258,16 +258,16 @@ def get_alumni(alumni_id: str, session: Session = Depends(get_session)):
     
     # Get related student record (optional)
     student = None
-    degree = None
+    course = None
     if alumni.student_code:
         student = session.exec(
             select(StudentRecord).where(StudentRecord.student_code == alumni.student_code)
         ).first()
         
-        # Get related degree (only if student exists)
+        # Get related course (only if student exists)
         if student:
-            degree = session.exec(
-                select(Degree).where(Degree.degree_code == student.degree_code)
+            course = session.exec(
+                select(Course).where(Course.course_code == student.course_code)
             ).first()
     
     # Get related user (if exists)
@@ -296,8 +296,8 @@ def get_alumni(alumni_id: str, session: Session = Depends(get_session)):
         ojt_grade=student.ojt_grade if student else None,
         leadership_pos=student.leadership_pos if student else None,
         act_member_pos=student.act_member_pos if student else None,
-        degree_id=degree.degree_id if degree else None,
-        degree_name=degree.degree_name if degree else None,
+        course_id=course.course_id if course else None,
+        course_name=course.course_name if course else None,
         created_at=alumni.created_at,
         updated_at=alumni.updated_at
     )
@@ -354,15 +354,15 @@ def update_alumni(
     
     # Fetch full profile for response
     student = None
-    degree = None
+    course = None
     if alumni.student_code:
         student = session.exec(
             select(StudentRecord).where(StudentRecord.student_code == alumni.student_code)
         ).first()
         
         if student:
-            degree = session.exec(
-                select(Degree).where(Degree.degree_code == student.degree_code)
+            course = session.exec(
+                select(Course).where(Course.course_code == student.course_code)
             ).first()
     
     user = None
@@ -389,8 +389,8 @@ def update_alumni(
         ojt_grade=student.ojt_grade if student else None,
         leadership_pos=student.leadership_pos if student else None,
         act_member_pos=student.act_member_pos if student else None,
-        degree_id=degree.degree_id if degree else None,
-        degree_name=degree.degree_name if degree else None,
+        course_id=course.course_id if course else None,
+        course_name=course.course_name if course else None,
         created_at=alumni.created_at,
         updated_at=alumni.updated_at
     )

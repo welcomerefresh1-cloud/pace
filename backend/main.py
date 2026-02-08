@@ -1,7 +1,7 @@
 # Trigger reload
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import users, degrees, student_records, alumni, auth, jobs
+from routers import users, courses, college_dept, student_records, alumni, auth, jobs
 from core.config import settings
 
 app = FastAPI(
@@ -21,7 +21,8 @@ app.add_middleware(
 # Include routers
 app.include_router(auth.router)
 app.include_router(users.router)
-app.include_router(degrees.router)
+app.include_router(college_dept.router)
+app.include_router(courses.router)
 app.include_router(student_records.router)
 app.include_router(alumni.router)
 app.include_router(jobs.router)
