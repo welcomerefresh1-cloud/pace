@@ -54,6 +54,8 @@ async def validation_exception_handler(request, exc):
             error_code = ErrorCode.INVALID_PASSWORD.value
         elif 'year_graduated' in str(field).lower():
             error_code = ErrorCode.INVALID_YEAR_GRADUATED.value
+        elif 'age' in str(field).lower():
+            error_code = ErrorCode.INVALID_AGE.value
         
         error_details.append({
             'field': str(field),

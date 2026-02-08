@@ -33,6 +33,14 @@ class CourseCreate(CourseBase):
         if isinstance(v, str):
             return v.upper()
         return v
+    
+    @field_validator('course_abbv', 'course_name')
+    @classmethod
+    def validate_non_empty(cls, v):
+        """Ensure abbreviation and name are not empty"""
+        if isinstance(v, str) and not v.strip():
+            raise ValueError('This field cannot be empty')
+        return v
 
 
 class CourseUpdate(SQLModel):
@@ -47,6 +55,14 @@ class CourseUpdate(SQLModel):
         """Convert abbreviations to uppercase"""
         if v is not None and isinstance(v, str):
             return v.upper()
+        return v
+    
+    @field_validator('course_abbv', 'course_name')
+    @classmethod
+    def validate_non_empty(cls, v):
+        """Ensure abbreviation and name are not empty if provided"""
+        if v is not None and isinstance(v, str) and not v.strip():
+            raise ValueError('This field cannot be empty')
         return v
 
 
