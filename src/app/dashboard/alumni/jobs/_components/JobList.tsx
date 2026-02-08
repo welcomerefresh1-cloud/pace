@@ -1,26 +1,23 @@
 "use client";
 
-import { ArrowUpDown, TrendingUp, Clock, ArrowDownWideNarrow, ArrowUpWideNarrow } from "lucide-react";
+
+
 import JobCard from "@/components/dashboard/alumni/JobCard";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface Job {
-    id: number;
+    id: number | string;
     title: string;
     company: string;
     location: string;
     salary: number;
+    salaryDisplay: string;
     type: string;
     postedDate: Date;
     logo: string;
     experienceLevel: string;
     workType: string;
+    snippet?: string;
 }
 
 interface JobListProps {
@@ -29,11 +26,11 @@ interface JobListProps {
     totalPages: number;
     currentPage: number;
     setCurrentPage: (page: number | ((prev: number) => number)) => void;
-    sortBy: string;
-    setSortBy: (sort: string) => void;
+
     JOBS_PER_PAGE: number;
     clearFilters: () => void;
-    getRelativeTime: (date: Date) => string;
+
+    isLoading?: boolean;
 }
 
 export default function JobList({
@@ -42,16 +39,13 @@ export default function JobList({
     totalPages,
     currentPage,
     setCurrentPage,
-    sortBy,
-    setSortBy,
+
     JOBS_PER_PAGE,
     clearFilters,
-    getRelativeTime,
+
+    isLoading = false,
 }: JobListProps) {
-    const paginatedJobs = filteredJobs.slice(
-        (currentPage - 1) * JOBS_PER_PAGE,
-        currentPage * JOBS_PER_PAGE
-    );
+    const paginatedJobs = filteredJobs;
 
     return (
         <div className="relative rounded-2xl bg-white border border-slate-400/50 p-6 shadow-lg shadow-slate-300/50 hover:shadow-xl transition-all duration-300 overflow-hidden">
@@ -85,62 +79,66 @@ export default function JobList({
                         Showing <strong className="text-slate-800">{filteredJobs.length}</strong> of {totalJobs} jobs
                     </p>
                 </div>
+            </div>
 
-                {/* Sort Dropdown */}
-                <Select value={sortBy} onValueChange={setSortBy}>
-                    <SelectTrigger className="w-[180px] bg-white border-slate-200 hover:border-emerald-400 transition-colors">
-                        <div className="flex items-center gap-2">
-                            <ArrowUpDown className="h-4 w-4 text-slate-500" />
-                            <SelectValue placeholder="Sort by" />
+            {/* Loading State */}
+            {isLoading ? (
+                <div className="relative z-10 flex flex-col gap-4">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                        <div key={i} className="flex items-start gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                            {/* Logo Skeleton */}
+                            <Skeleton className="h-12 w-12 rounded-xl flex-shrink-0" />
+
+                            <div className="flex-1 min-w-0">
+                                <div className="flex justify-between items-start mb-2">
+                                    <div className="space-y-1.5">
+                                        {/* Title Skeleton */}
+                                        <Skeleton className="h-6 w-48" />
+                                        {/* Company Skeleton */}
+                                        <Skeleton className="h-4 w-32" />
+                                    </div>
+                                    <div className="flex gap-2">
+                                        {/* Badge Skeleton */}
+                                        <Skeleton className="h-6 w-20 rounded-full" />
+                                    </div>
+                                </div>
+
+                                {/* Description Skeleton */}
+                                <div className="space-y-1.5 mb-3">
+                                    <Skeleton className="h-4 w-full" />
+                                    <Skeleton className="h-4 w-5/6" />
+                                </div>
+
+                                {/* Footer Skeleton (Location & Salary) */}
+                                <div className="flex gap-4">
+                                    <Skeleton className="h-4 w-32" />
+                                    <Skeleton className="h-4 w-24" />
+                                </div>
+                            </div>
                         </div>
-                    </SelectTrigger>
-                    <SelectContent position="popper" align="end" sideOffset={4} className="bg-white">
-                        <SelectItem value="relevant">
-                            <div className="flex items-center gap-2">
-                                <TrendingUp className="h-4 w-4 text-emerald-600" />
-                                Most Relevant
-                            </div>
-                        </SelectItem>
-                        <SelectItem value="newest">
-                            <div className="flex items-center gap-2">
-                                <Clock className="h-4 w-4 text-blue-600" />
-                                Newest First
-                            </div>
-                        </SelectItem>
-                        <SelectItem value="salary-desc">
-                            <div className="flex items-center gap-2">
-                                <ArrowDownWideNarrow className="h-4 w-4 text-amber-600" />
-                                Salary: High to Low
-                            </div>
-                        </SelectItem>
-                        <SelectItem value="salary-asc">
-                            <div className="flex items-center gap-2">
-                                <ArrowUpWideNarrow className="h-4 w-4 text-violet-600" />
-                                Salary: Low to High
-                            </div>
-                        </SelectItem>
-                    </SelectContent>
-                </Select>
-            </div>
+                    ))}
+                </div>
+            ) : (
+                /* Job Cards List */
+                <div className="relative z-10 flex flex-col gap-4">
+                    {paginatedJobs.map((job) => (
+                        <JobCard
+                            key={job.id}
+                            title={job.title}
+                            company={job.company}
+                            location={job.location}
+                            salary={job.salaryDisplay}
+                            type={job.type}
 
-            {/* Job Cards List */}
-            <div className="relative z-10 flex flex-col gap-4">
-                {paginatedJobs.map((job) => (
-                    <JobCard
-                        key={job.id}
-                        title={job.title}
-                        company={job.company}
-                        location={job.location}
-                        salary={`₱${job.salary}k`}
-                        type={job.type}
-                        postedAgo={getRelativeTime(job.postedDate)}
-                        logo={job.logo}
-                    />
-                ))}
-            </div>
+                            logo={job.logo}
+                            description={job.snippet}
+                        />
+                    ))}
+                </div>
+            )}
 
             {/* Empty State */}
-            {filteredJobs.length === 0 && (
+            {!isLoading && filteredJobs.length === 0 && (
                 <div className="relative z-10 py-12 text-center">
                     <div className="flex justify-center mb-4">
                         <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
@@ -161,7 +159,7 @@ export default function JobList({
             )}
 
             {/* Pagination */}
-            {totalPages > 1 && (
+            {!isLoading && totalPages > 1 && (
                 <div className="relative z-10 mt-8 flex items-center justify-center gap-2">
                     {/* Previous Button */}
                     <button
@@ -227,9 +225,9 @@ export default function JobList({
             )}
 
             {/* Showing X of Y jobs indicator */}
-            {filteredJobs.length > 0 && (
+            {!isLoading && filteredJobs.length > 0 && (
                 <div className="relative z-10 mt-4 text-center text-sm text-slate-500">
-                    Showing {(currentPage - 1) * JOBS_PER_PAGE + 1}-{Math.min(currentPage * JOBS_PER_PAGE, filteredJobs.length)} of {filteredJobs.length} jobs
+                    Showing {(currentPage - 1) * JOBS_PER_PAGE + 1}-{Math.min((currentPage - 1) * JOBS_PER_PAGE + filteredJobs.length, totalJobs)} of {totalJobs} jobs
                 </div>
             )}
         </div>

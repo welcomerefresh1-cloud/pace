@@ -11,6 +11,7 @@ class Settings:
     SUPABASE_ANON_KEY: str = os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "")
     SUPABASE_SERVICE_KEY: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
     ALGORITHM: str = "HS256"
+    JOOBLE_API_KEY: str = os.getenv("JOOBLE_API_KEY", "")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     
     # CORS settings

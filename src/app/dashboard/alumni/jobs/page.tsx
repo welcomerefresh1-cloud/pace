@@ -1,23 +1,143 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
-import FilterChip from "@/components/dashboard/alumni/FilterChip";
+import { toast } from "sonner";
+import { useState, useMemo, useEffect, useCallback } from "react";
+
+
 import JobFilters from "./_components/JobFilters";
 import JobList from "./_components/JobList";
-import { jobData, dateFilters } from "./_components/constants";
+import { jobTypes, experienceLevels, workTypes } from "./_components/constants";
+import { searchJobs, JoobleJob } from "./_lib/api";
+import { useDebounce } from "@/hooks/use-debounce";
+
+// Unified job type that works with both static and API data
+interface UnifiedJob {
+    id: number | string;
+    title: string;
+    company: string;
+    location: string;
+    salary: number;
+    salaryDisplay: string;
+    type: string;
+    postedDate: Date;
+    logo: string;
+    experienceLevel: string;
+    workType: string;
+    link?: string;
+    snippet?: string;
+}
+
+// Convert Jooble API job to unified format
+function convertApiJob(job: JoobleJob, index: number): UnifiedJob {
+    // Parse salary from string (e.g., "₱20,000 - ₱30,000" or "Competitive")
+    let salaryNum = 0; // Default salary for filtering (0 means unknown/negotiable)
+    let salaryDisplay = "Undisclosed";
+
+    const salaryStr = job.salary || job.raw_salary;
+    if (salaryStr) {
+        salaryDisplay = salaryStr; // Use original string for display
+        const match = salaryStr.match(/[\d,]+/);
+        if (match) {
+            salaryNum = Math.round(parseInt(match[0].replace(/,/g, "")) / 1000);
+        }
+    }
+
+    // Clean up snippet
+    let snippet = job.snippet || job.description || "";
+    // Remove leading ellipsis, whitespace, and non-word characters (except starting tags if any)
+    snippet = snippet.replace(/^(\s*\.\.\.\s*)+/, "").trim();
+    // Capitalize first letter if it explains the start
+    if (snippet && snippet.length > 0) {
+        snippet = snippet.charAt(0).toUpperCase() + snippet.slice(1);
+    }
+
+    return {
+        id: job.id || `api-${index}`,
+        title: job.title,
+        company: job.company,
+        location: job.location || "Philippines",
+        salary: salaryNum,
+        salaryDisplay: salaryDisplay,
+        type: job.type || job.job_type || "Full-time",
+        postedDate: job.updated ? new Date(job.updated) : new Date(),
+        logo: job.company.charAt(0).toUpperCase(),
+        experienceLevel: "Not specified",
+        workType: job.location?.toLowerCase().includes("remote") ? "Remote" : "On-site",
+        link: job.link,
+        snippet: snippet,
+    };
+}
 
 export default function JobListingsPage() {
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
-    const [locationSearch, setLocationSearch] = useState("");
+    const [locationSearch, setLocationSearch] = useState("Pasig");
     const [selectedExperience, setSelectedExperience] = useState<string[]>([]);
     const [selectedWorkTypes, setSelectedWorkTypes] = useState<string[]>([]);
-    const [salaryRange, setSalaryRange] = useState<[number, number]>([15, 100]);
-    const [tempSalaryRange, setTempSalaryRange] = useState<[number, number]>([15, 100]);
-    const [datePosted, setDatePosted] = useState("anytime");
-    const [sortBy, setSortBy] = useState("relevant");
+    const [salaryRange, setSalaryRange] = useState<[number, number]>([0, 500]);
+    const [tempSalaryRange, setTempSalaryRange] = useState<[number, number]>([0, 500]);
+    const [hasSalary, setHasSalary] = useState(false);
+
     const [currentPage, setCurrentPage] = useState(1);
     const JOBS_PER_PAGE = 10;
+
+    const debouncedSearchQuery = useDebounce(searchQuery, 500);
+    const debouncedLocationSearch = useDebounce(locationSearch, 500);
+
+    // API state
+    const [apiJobs, setApiJobs] = useState<UnifiedJob[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    // const [error, setError] = useState<string | null>(null); // Removed error state
+
+    const [totalApiJobs, setTotalApiJobs] = useState(0);
+    const [facets, setFacets] = useState<{
+        jobTypes: Record<string, number>;
+        workTypes: Record<string, number>;
+        experienceLevels: Record<string, number>;
+    }>({ jobTypes: {}, workTypes: {}, experienceLevels: {} });
+
+    // Fetch jobs from API
+    const fetchJobs = useCallback(async () => {
+        setIsLoading(true);
+        // setError(null);
+
+        try {
+            const result = await searchJobs({
+                keywords: debouncedSearchQuery || undefined,
+                location: debouncedLocationSearch || "Philippines",
+                job_type: selectedTypes.length > 0 ? selectedTypes[0] : undefined,
+                page: currentPage,
+                limit: JOBS_PER_PAGE,
+                has_salary: hasSalary,
+            });
+
+            if (result.error) {
+                // setError(result.error);
+                toast.error(result.error);
+                setApiJobs([]);
+                setTotalApiJobs(0);
+            } else {
+                const converted = result.jobs.map((job, index) => convertApiJob(job, index));
+                setApiJobs(converted);
+                setTotalApiJobs(result.totalCount);
+                if (result.facets) {
+                    setFacets(result.facets);
+                }
+            }
+        } catch {
+            // setError("Failed to fetch jobs from API");
+            toast.error("Failed to fetch jobs from API");
+            setApiJobs([]);
+            setTotalApiJobs(0);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [debouncedSearchQuery, debouncedLocationSearch, selectedTypes, currentPage, JOBS_PER_PAGE, hasSalary]);
+
+    // Fetch on mount and when search/location/page changes
+    useEffect(() => {
+        fetchJobs();
+    }, [fetchJobs]);
 
     // Debounce salary range updates to prevent layout shift while dragging
     useEffect(() => {
@@ -27,104 +147,41 @@ export default function JobListingsPage() {
         return () => clearTimeout(timer);
     }, [tempSalaryRange]);
 
-    // Calculate date threshold based on filter
-    const getDateThreshold = () => {
-        const now = new Date();
-        switch (datePosted) {
-            case "24h":
-                return new Date(now.getTime() - 24 * 60 * 60 * 1000);
-            case "week":
-                return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-            case "month":
-                return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-            default:
-                return new Date(0);
-        }
-    };
 
-    // Filter and sort jobs
+
+    // Use API jobs directly
+    const jobData = apiJobs;
+    const totalJobCount = totalApiJobs;
+
+    // Filter and sort jobs (client-side filtering for displayed API results)
     const filteredJobs = useMemo(() => {
-        const dateThreshold = getDateThreshold();
+        const isDefaultSalary = salaryRange[0] === 0 && salaryRange[1] === 500;
 
+        // If using API, jobs are already filtered server-side for keywords/location and JOB TYPE
+        // Just apply client-side filters for experience, salary, etc.
         let filtered = jobData.filter((job) => {
-            const matchesSearch =
-                searchQuery === "" ||
-                job.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                job.company.toLowerCase().includes(searchQuery.toLowerCase());
-
-            const matchesType = selectedTypes.length === 0 || selectedTypes.includes(job.type);
-            const matchesLocation = locationSearch === "" || job.location.toLowerCase().includes(locationSearch.toLowerCase());
+            // const matchesType = selectedTypes.length === 0 || selectedTypes.includes(job.type); // Handled by API
             const matchesExperience = selectedExperience.length === 0 || selectedExperience.includes(job.experienceLevel);
             const matchesWorkType = selectedWorkTypes.length === 0 || selectedWorkTypes.includes(job.workType);
-            const matchesSalary = job.salary >= salaryRange[0] && job.salary <= salaryRange[1];
-            const matchesDate = job.postedDate >= dateThreshold;
+            const matchesSalary = isDefaultSalary || job.salary === 0 || (job.salary >= salaryRange[0] && job.salary <= salaryRange[1]);
 
-            return matchesSearch && matchesType && matchesLocation && matchesExperience &&
-                matchesWorkType && matchesSalary && matchesDate;
+            return matchesExperience && matchesWorkType && matchesSalary;
         });
 
-        // Sort jobs
-        switch (sortBy) {
-            case "newest":
-                filtered.sort((a, b) => b.postedDate.getTime() - a.postedDate.getTime());
-                break;
-            case "salary-desc":
-                filtered.sort((a, b) => b.salary - a.salary);
-                break;
-            case "salary-asc":
-                filtered.sort((a, b) => a.salary - b.salary);
-                break;
-            default:
-                // Keep original order for "relevant"
-                break;
-        }
+
 
         return filtered;
-    }, [searchQuery, selectedTypes, locationSearch, selectedExperience, selectedWorkTypes, salaryRange, datePosted, sortBy]);
+    }, [jobData, selectedTypes, selectedExperience, selectedWorkTypes, salaryRange]);
 
     // Calculate counts for each filter option
     const getFilterCounts = (filterType: string, option: string) => {
-        const dateThreshold = getDateThreshold();
+        // Use Server-Side Facets if available
+        if (filterType === "type") return facets.jobTypes[option] || 0;
+        if (filterType === "workType") return facets.workTypes[option] || 0;
+        if (filterType === "experience") return facets.experienceLevels[option] || 0;
 
-        return jobData.filter((job) => {
-            const matchesSearch =
-                searchQuery === "" ||
-                job.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                job.company.toLowerCase().includes(searchQuery.toLowerCase());
-
-            const matchesSalary = job.salary >= salaryRange[0] && job.salary <= salaryRange[1];
-            const matchesDate = job.postedDate >= dateThreshold;
-
-            // Apply all filters except the current one being counted
-            let matches = matchesSearch && matchesSalary && matchesDate;
-
-            if (filterType !== "type") {
-                matches = matches && (selectedTypes.length === 0 || selectedTypes.includes(job.type));
-            }
-            if (filterType !== "location") {
-                matches = matches && (locationSearch === "" || job.location.toLowerCase().includes(locationSearch.toLowerCase()));
-            }
-            if (filterType !== "experience") {
-                matches = matches && (selectedExperience.length === 0 || selectedExperience.includes(job.experienceLevel));
-            }
-            if (filterType !== "workType") {
-                matches = matches && (selectedWorkTypes.length === 0 || selectedWorkTypes.includes(job.workType));
-            }
-
-            // Check if this job matches the option being counted
-            switch (filterType) {
-                case "type":
-                    return matches && job.type === option;
-                case "location":
-                    return matches && job.location === option;
-                case "experience":
-                    return matches && job.experienceLevel === option;
-                case "workType":
-                    return matches && job.workType === option;
-                default:
-                    return matches;
-            }
-        }).length;
+        // Fallback or specific logic for other fields
+        return 0; // Replace with 0 or keep client logic if needed for others
     };
 
     const clearFilters = () => {
@@ -133,47 +190,17 @@ export default function JobListingsPage() {
         setLocationSearch("");
         setSelectedExperience([]);
         setSelectedWorkTypes([]);
-        setSalaryRange([15, 100]);
-        setTempSalaryRange([15, 100]);
-        setDatePosted("anytime");
+        setSalaryRange([0, 500]);
+        setTempSalaryRange([0, 500]);
+        setHasSalary(false);
         setCurrentPage(1);
     };
 
-    // Reset to page 1 when filters change
     useEffect(() => {
         setCurrentPage(1);
-    }, [searchQuery, selectedTypes, locationSearch, selectedExperience, selectedWorkTypes, salaryRange, datePosted]);
+    }, [debouncedSearchQuery, selectedTypes, debouncedLocationSearch, selectedExperience, selectedWorkTypes, salaryRange, hasSalary]);
 
-    const hasActiveFilters =
-        searchQuery ||
-        selectedTypes.length > 0 ||
-        locationSearch ||
-        selectedExperience.length > 0 ||
-        selectedWorkTypes.length > 0 ||
-        salaryRange[0] !== 15 ||
-        salaryRange[1] !== 100 ||
-        datePosted !== "anytime";
 
-    const toggleFilter = (filterArray: string[], setFilter: (val: string[]) => void, value: string) => {
-        if (filterArray.includes(value)) {
-            setFilter(filterArray.filter((item) => item !== value));
-        } else {
-            setFilter([...filterArray, value]);
-        }
-    };
-
-    // Format relative time
-    const getRelativeTime = (date: Date) => {
-        const now = new Date();
-        const diffMs = now.getTime() - date.getTime();
-        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-        const diffDays = Math.floor(diffHours / 24);
-
-        if (diffHours < 24) return `${diffHours}h ago`;
-        if (diffDays < 7) return `${diffDays}d ago`;
-        if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
-        return `${Math.floor(diffDays / 30)}mo ago`;
-    };
 
     return (
         <div className="relative">
@@ -187,80 +214,13 @@ export default function JobListingsPage() {
             <div className="relative mb-8">
                 <h1 className="text-2xl font-bold text-slate-900">Job Listings</h1>
                 <p className="mt-1 text-slate-500">Discover opportunities that match your skills and career goals</p>
+
+
             </div>
 
-            {/* Active Filter Chips */}
-            {hasActiveFilters && (
-                <div className="relative mb-6 flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 border border-slate-200 p-4">
-                    <span className="text-sm font-medium text-slate-600">Active Filters:</span>
 
-                    {searchQuery && (
-                        <FilterChip
-                            label="Search"
-                            value={searchQuery}
-                            onRemove={() => setSearchQuery("")}
-                        />
-                    )}
 
-                    {selectedTypes.map((type) => (
-                        <FilterChip
-                            key={type}
-                            label="Type"
-                            value={type}
-                            onRemove={() => toggleFilter(selectedTypes, setSelectedTypes, type)}
-                        />
-                    ))}
 
-                    {locationSearch && (
-                        <FilterChip
-                            label="Location"
-                            value={locationSearch}
-                            onRemove={() => setLocationSearch("")}
-                        />
-                    )}
-
-                    {selectedExperience.map((exp) => (
-                        <FilterChip
-                            key={exp}
-                            label="Experience"
-                            value={exp}
-                            onRemove={() => toggleFilter(selectedExperience, setSelectedExperience, exp)}
-                        />
-                    ))}
-
-                    {selectedWorkTypes.map((workType) => (
-                        <FilterChip
-                            key={workType}
-                            label="Work Type"
-                            value={workType}
-                            onRemove={() => toggleFilter(selectedWorkTypes, setSelectedWorkTypes, workType)}
-                        />
-                    ))}
-
-                    {(salaryRange[0] !== 15 || salaryRange[1] !== 100) && (
-                        <FilterChip
-                            label="Salary"
-                            value={`₱${salaryRange[0]}k - ₱${salaryRange[1]}k`}
-                            onRemove={() => setSalaryRange([15, 100])}
-                        />
-                    )}
-
-                    {datePosted !== "anytime" && (
-                        <FilterChip
-                            label="Posted"
-                            value={dateFilters.find((d) => d.value === datePosted)?.label || ""}
-                            onRemove={() => setDatePosted("anytime")}
-                        />
-                    )}
-
-                    <button
-                        onClick={clearFilters}
-                        className="ml-auto text-sm font-medium text-red-600 hover:text-red-700 underline"
-                    >
-                        Clear All
-                    </button>
-                </div>
-            )}
 
             {/* 2-Column Layout */}
             <div className="relative grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -268,15 +228,14 @@ export default function JobListingsPage() {
                 <div className="lg:col-span-2">
                     <JobList
                         filteredJobs={filteredJobs}
-                        totalJobs={jobData.length}
-                        totalPages={Math.ceil(filteredJobs.length / JOBS_PER_PAGE)}
+                        totalJobs={totalJobCount}
+                        totalPages={Math.ceil(totalApiJobs / JOBS_PER_PAGE)}
                         currentPage={currentPage}
                         setCurrentPage={setCurrentPage}
-                        sortBy={sortBy}
-                        setSortBy={setSortBy}
+
                         JOBS_PER_PAGE={JOBS_PER_PAGE}
                         clearFilters={clearFilters}
-                        getRelativeTime={getRelativeTime}
+                        isLoading={isLoading}
                     />
                 </div>
 
@@ -295,8 +254,8 @@ export default function JobListingsPage() {
                         setSelectedExperience={setSelectedExperience}
                         tempSalaryRange={tempSalaryRange}
                         setTempSalaryRange={setTempSalaryRange}
-                        datePosted={datePosted}
-                        setDatePosted={setDatePosted}
+                        hasSalary={hasSalary}
+                        setHasSalary={setHasSalary}
                         getFilterCounts={getFilterCounts}
                     />
                 </div>

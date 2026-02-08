@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Slider } from "@/components/ui/slider";
 import FilterSection from "@/components/dashboard/alumni/FilterSection";
-import { jobTypes, experienceLevels, workTypes, dateFilters } from "./constants";
+import { jobTypes, experienceLevels, workTypes } from "./constants";
 
 interface JobFiltersProps {
     searchQuery: string;
@@ -20,8 +20,9 @@ interface JobFiltersProps {
     setSelectedExperience: (levels: string[]) => void;
     tempSalaryRange: [number, number];
     setTempSalaryRange: (range: [number, number]) => void;
-    datePosted: string;
-    setDatePosted: (date: string) => void;
+
+    hasSalary: boolean;
+    setHasSalary: (has: boolean) => void;
     getFilterCounts: (type: string, option: string) => number;
 }
 
@@ -38,8 +39,9 @@ export default function JobFilters({
     setSelectedExperience,
     tempSalaryRange,
     setTempSalaryRange,
-    datePosted,
-    setDatePosted,
+
+    hasSalary,
+    setHasSalary,
     getFilterCounts,
 }: JobFiltersProps) {
 
@@ -98,11 +100,12 @@ export default function JobFilters({
                             <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                             <Input
                                 type="text"
-                                placeholder="Search location..."
+                                placeholder="City, state, or zip code"
                                 value={locationSearch}
                                 onChange={(e) => setLocationSearch(e.target.value)}
                                 className="pl-10 h-11 bg-slate-50 border-slate-200 focus-visible:border-emerald-400 focus-visible:ring-emerald-500/20"
                             />
+
                         </div>
                     </FilterSection>
 
@@ -114,14 +117,12 @@ export default function JobFilters({
                                 return (
                                     <label
                                         key={type}
-                                        className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors ${count === 0 ? "opacity-50" : "hover:bg-slate-50"
-                                            }`}
+                                        className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors hover:bg-slate-50`}
                                     >
                                         <div className="flex items-center gap-3">
                                             <Checkbox
                                                 checked={selectedTypes.includes(type)}
                                                 onCheckedChange={() => toggleFilter(selectedTypes, setSelectedTypes, type)}
-                                                disabled={count === 0}
                                                 className="border-slate-300 data-[state=checked]:bg-emerald-500 data-[state=checked]:border-emerald-500"
                                             />
                                             <Briefcase className="h-4 w-4 text-slate-400" />
@@ -143,14 +144,12 @@ export default function JobFilters({
                                 return (
                                     <label
                                         key={workType}
-                                        className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors ${count === 0 ? "opacity-50" : "hover:bg-slate-50"
-                                            }`}
+                                        className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors hover:bg-slate-50`}
                                     >
                                         <div className="flex items-center gap-3">
                                             <Checkbox
                                                 checked={selectedWorkTypes.includes(workType)}
                                                 onCheckedChange={() => toggleFilter(selectedWorkTypes, setSelectedWorkTypes, workType)}
-                                                disabled={count === 0}
                                                 className="border-slate-300 data-[state=checked]:bg-emerald-500 data-[state=checked]:border-emerald-500"
                                             />
                                             <IconComponent className="h-4 w-4 text-slate-400" />
@@ -171,14 +170,12 @@ export default function JobFilters({
                                 return (
                                     <label
                                         key={level}
-                                        className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors ${count === 0 ? "opacity-50" : "hover:bg-slate-50"
-                                            }`}
+                                        className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors hover:bg-slate-50`}
                                     >
                                         <div className="flex items-center gap-3">
                                             <Checkbox
                                                 checked={selectedExperience.includes(level)}
                                                 onCheckedChange={() => toggleFilter(selectedExperience, setSelectedExperience, level)}
-                                                disabled={count === 0}
                                                 className="border-slate-300 data-[state=checked]:bg-emerald-500 data-[state=checked]:border-emerald-500"
                                             />
                                             <GraduationCap className="h-4 w-4 text-slate-400" />
@@ -193,7 +190,21 @@ export default function JobFilters({
 
                     {/* Salary Range */}
                     <FilterSection title="Salary Range">
-                        <div className="space-y-4 pt-2">
+                        <div className="flex items-center gap-3 mb-4 p-2 rounded-lg hover:bg-slate-50 transition-colors">
+                            <Checkbox
+                                id="hasSalary"
+                                checked={hasSalary}
+                                onCheckedChange={(checked) => setHasSalary(checked as boolean)}
+                                className="border-slate-300 data-[state=checked]:bg-emerald-500 data-[state=checked]:border-emerald-500"
+                            />
+                            <label
+                                htmlFor="hasSalary"
+                                className="text-sm text-slate-700 cursor-pointer select-none font-medium"
+                            >
+                                With Salary Info
+                            </label>
+                        </div>
+                        <div className="space-y-4 pt-2 border-t border-slate-100">
                             <div className="flex items-center justify-between text-sm">
                                 <div className="flex flex-col">
                                     <span className="text-xs text-slate-500 mb-1">Min Salary</span>
@@ -208,33 +219,15 @@ export default function JobFilters({
                             <Slider
                                 value={tempSalaryRange}
                                 onValueChange={(value) => setTempSalaryRange(value as [number, number])}
-                                min={15}
-                                max={100}
+                                min={0}
+                                max={500}
                                 step={5}
                                 className="[&_[data-slot=slider-track]]:bg-slate-200 [&_[data-slot=slider-range]]:bg-emerald-500 [&_[data-slot=slider-thumb]]:border-emerald-500 [&_[data-slot=slider-thumb]]:hover:ring-emerald-200"
                             />
                             <div className="flex justify-between text-xs text-slate-400">
-                                <span>₱15k</span>
-                                <span>₱100k</span>
+                                <span>₱0k</span>
+                                <span>₱500k+</span>
                             </div>
-                        </div>
-                    </FilterSection>
-
-                    {/* Date Posted */}
-                    <FilterSection title="Date Posted">
-                        <div className="grid grid-cols-2 gap-2">
-                            {dateFilters.map((filter) => (
-                                <button
-                                    key={filter.value}
-                                    onClick={() => setDatePosted(filter.value)}
-                                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${datePosted === filter.value
-                                        ? "bg-emerald-500 text-white shadow-md"
-                                        : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200"
-                                        }`}
-                                >
-                                    {filter.label}
-                                </button>
-                            ))}
                         </div>
                     </FilterSection>
                 </div>

@@ -25,11 +25,12 @@ class JobListingBase(SQLModel):
     company: str
     description: str
     location: str
-    job_type: JobType
-    work_type: WorkType
-    experience_level: ExperienceLevel
+    job_type: Optional[str] = Field(default=None)
+    work_type: Optional[str] = Field(default=None)
+    experience_level: Optional[str] = Field(default=None)
     salary_min: Optional[int] = None
     salary_max: Optional[int] = None
+    raw_salary: Optional[str] = None
     posted_at: datetime = Field(default_factory=datetime.utcnow)
     source_api: Optional[str] = None
     external_id: Optional[str] = None
@@ -55,9 +56,9 @@ class JobListingUpdate(SQLModel):
     company: Optional[str] = None
     description: Optional[str] = None
     location: Optional[str] = None
-    job_type: Optional[JobType] = None
-    work_type: Optional[WorkType] = None
-    experience_level: Optional[ExperienceLevel] = None
+    job_type: Optional[str] = None
+    work_type: Optional[str] = None
+    experience_level: Optional[str] = None
     salary_min: Optional[int] = None
     salary_max: Optional[int] = None
     is_active: Optional[bool] = None

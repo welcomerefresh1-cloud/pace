@@ -4,8 +4,8 @@ export default function JobCard({
     location,
     salary,
     type,
-    postedAgo,
     logo,
+    description,
     className,
 }: {
     title: string;
@@ -13,8 +13,8 @@ export default function JobCard({
     location: string;
     salary: string;
     type: string;
-    postedAgo: string;
     logo: string;
+    description?: string;
     className?: string;
 }) {
     // Determine badge color based on type
@@ -62,7 +62,7 @@ export default function JobCard({
             </div>
 
             <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start justify-between gap-3 mb-2">
                     <div className="flex-1 min-w-0">
                         <h3 className="font-semibold text-slate-900 group-hover:text-emerald-700 transition-colors duration-300 truncate">
                             {title}
@@ -82,7 +82,14 @@ export default function JobCard({
                     </div>
                 </div>
 
-                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+                {description && (
+                    <div
+                        className="text-sm text-slate-600 mb-3 line-clamp-2"
+                        dangerouslySetInnerHTML={{ __html: description }}
+                    />
+                )}
+
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
                     <span className="flex items-center gap-1.5 text-slate-500">
                         <svg className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
@@ -96,10 +103,7 @@ export default function JobCard({
                         </svg>
                         {salary}
                     </span>
-                    <span className="flex items-center gap-1 text-slate-400 text-xs">
-                        <span className="w-1 h-1 rounded-full bg-slate-300" />
-                        {postedAgo}
-                    </span>
+
                 </div>
             </div>
         </div>

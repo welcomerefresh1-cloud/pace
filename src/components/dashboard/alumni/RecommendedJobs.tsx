@@ -1,7 +1,59 @@
+"use client";
+
 import Link from "next/link";
 import JobCard from "./JobCard";
+import { useEffect, useState } from "react";
+import { JoobleJob, getRecommendedJobs } from "@/app/dashboard/alumni/jobs/_lib/api";
+import { Skeleton } from "@/components/ui/skeleton";
+
+// Helper to format salary
+const formatSalary = (salaryStr: string) => {
+    if (!salaryStr) return "Undisclosed";
+    return salaryStr;
+};
+
+// Helper to format time
+const formatTimeAgo = (dateStr: string) => {
+    if (!dateStr) return "Recently";
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffTime = Math.abs(now.getTime() - date.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) return "Today";
+    if (diffDays === 1) return "Yesterday";
+    return `${diffDays} days ago`;
+};
+
+// Helper to format snippet
+const formatSnippet = (text: string) => {
+    if (!text) return "";
+    // Remove leading ellipsis
+    let snippet = text.replace(/^(\s*\.\.\.\s*)+/, "").trim();
+    if (snippet.length > 0) {
+        snippet = snippet.charAt(0).toUpperCase() + snippet.slice(1);
+    }
+    return snippet;
+};
 
 export default function RecommendedJobs() {
+    const [jobs, setJobs] = useState<JoobleJob[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        async function fetchRecommended() {
+            try {
+                const data = await getRecommendedJobs();
+                setJobs(data);
+            } catch (e) {
+                console.error("Failed to fetch recommended jobs", e);
+            } finally {
+                setIsLoading(false);
+            }
+        }
+        fetchRecommended();
+    }, []);
+
     return (
         <div className="lg:col-span-2 flex flex-col">
             <div className="relative h-full flex flex-col rounded-2xl bg-white border border-slate-400/50 p-6 shadow-lg shadow-slate-300/50 hover:shadow-xl transition-all duration-300 overflow-hidden">
@@ -42,38 +94,62 @@ export default function RecommendedJobs() {
                     </Link>
                 </div>
                 <div className="relative z-10 flex-1 flex flex-col gap-4">
-                    <JobCard
-                        title="Junior Software Developer"
-                        company="Accenture Philippines"
-                        location="BGC, Taguig"
-                        salary="₱35k - ₱50k"
-                        type="Full-time"
-                        postedAgo="2 days ago"
-                        logo="A"
-                        className="flex-1"
-                    />
-                    <JobCard
-                        title="IT Support Specialist"
-                        company="Globe Telecom"
-                        location="Makati City"
-                        salary="₱25k - ₱35k"
-                        type="Full-time"
-                        postedAgo="3 days ago"
-                        logo="G"
-                        className="flex-1"
-                    />
-                    <JobCard
-                        title="Web Developer Intern"
-                        company="Freelancer.com"
-                        location="Remote"
-                        salary="₱15k - ₱20k"
-                        type="Internship"
-                        postedAgo="1 week ago"
-                        logo="F"
-                        className="flex-1"
-                    />
+                    {isLoading ? (
+                        <div className="flex flex-col gap-4">
+                            {[1, 2, 3].map((i) => (
+                                <div key={i} className="flex items-start gap-4 p-5 rounded-xl border border-slate-200 bg-white shadow-sm">
+                                    {/* Logo Skeleton */}
+                                    <Skeleton className="h-12 w-12 rounded-xl flex-shrink-0" />
+
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <div className="space-y-1.5">
+                                                {/* Title Skeleton */}
+                                                <Skeleton className="h-5 w-48" />
+                                                {/* Company Skeleton */}
+                                                <Skeleton className="h-4 w-32" />
+                                            </div>
+                                            {/* Badge Skeleton */}
+                                            <Skeleton className="h-6 w-20 rounded-full" />
+                                        </div>
+
+                                        {/* Description Skeleton */}
+                                        <div className="space-y-1.5 mb-3">
+                                            <Skeleton className="h-4 w-full" />
+                                            <Skeleton className="h-4 w-5/6" />
+                                        </div>
+
+                                        {/* Footer Skeleton (Location & Salary) */}
+                                        <div className="flex gap-4">
+                                            <Skeleton className="h-4 w-32" />
+                                            <Skeleton className="h-4 w-24" />
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : jobs.length > 0 ? (
+                        jobs.map((job, idx) => (
+                            <JobCard
+                                key={job.id || idx}
+                                title={job.title}
+                                company={job.company}
+                                location={job.location}
+                                salary={formatSalary(job.salary || job.raw_salary || "")}
+                                type={job.type || "Full-time"}
+                                logo={job.company.charAt(0).toUpperCase()}
+                                className="flex-1"
+                                description={formatSnippet(job.snippet || job.description || "")}
+                            />
+                        ))
+                    ) : (
+                        <div className="flex-1 flex items-center justify-center min-h-[200px] text-slate-400">
+                            No recommendations available at the moment.
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
     );
 }
+
