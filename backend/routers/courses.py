@@ -201,7 +201,7 @@ def get_all_courses(
     )
 
 
-@router.get("/{course_id}", response_model=CoursePublic)
+@router.get("/{course_id}")
 def get_course(course_id: str, session: Session = Depends(get_session)):
     """Get a specific course by course_id"""
     course = session.exec(
@@ -224,10 +224,15 @@ def get_course(course_id: str, session: Session = Depends(get_session)):
         select(CollegeDept).where(CollegeDept.college_dept_code == course.college_dept_code)
     ).first()
     
-    return CoursePublic(
-        **course.model_dump(exclude={"college_dept_code"}),
-        college_dept_id=college_dept.college_dept_id if college_dept else "UNKNOWN",
-        college_dept_name=college_dept.college_dept_name if college_dept else "Unknown Department"
+    return StandardResponse(
+        success=True,
+        code=SuccessCode.COURSE_RETRIEVED.value,
+        message=f"Course {course_id} retrieved successfully",
+        data=CoursePublic(
+            **course.model_dump(exclude={"college_dept_code"}),
+            college_dept_id=college_dept.college_dept_id if college_dept else "UNKNOWN",
+            college_dept_name=college_dept.college_dept_name if college_dept else "Unknown Department"
+        )
     )
 
 

@@ -269,7 +269,7 @@ def get_all_alumni(
     )
 
 
-@router.get("/{alumni_id}", response_model=AlumniFullProfile)
+@router.get("/{alumni_id}")
 def get_alumni(alumni_id: str, session: Session = Depends(get_session)):
     """Get specific alumni by alumni_id with full profile"""
     alumni = session.exec(
@@ -309,7 +309,7 @@ def get_alumni(alumni_id: str, session: Session = Depends(get_session)):
         ).first()
     
     # Build full profile
-    return AlumniFullProfile(
+    profile = AlumniFullProfile(
         alumni_id=alumni.alumni_id,
         last_name=alumni.last_name,
         first_name=alumni.first_name,
@@ -332,9 +332,16 @@ def get_alumni(alumni_id: str, session: Session = Depends(get_session)):
         created_at=alumni.created_at,
         updated_at=alumni.updated_at
     )
+    
+    return StandardResponse(
+        success=True,
+        code=SuccessCode.ALUMNI_RETRIEVED.value,
+        message=f"Alumni {alumni_id} retrieved successfully",
+        data=profile
+    )
 
 
-@router.put("/{alumni_id}", response_model=AlumniFullProfile)
+@router.put("/{alumni_id}")
 def update_alumni(
     alumni_id: str,
     alumni_data: AlumniUpdate,
@@ -349,10 +356,11 @@ def update_alumni(
         log_error("alumni", "update_alumni", ErrorCode.ALUMNI_NOT_FOUND.value, f"Alumni {alumni_id} not found")
         raise HTTPException(
             status_code=404,
-            detail={
-                "code": ErrorCode.ALUMNI_NOT_FOUND.value,
-                "message": "Alumni not found"
-            }
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.ALUMNI_NOT_FOUND.value,
+                message="Alumni not found"
+            ).model_dump(mode='json')
         )
     
     # Update only provided fields
@@ -377,10 +385,11 @@ def update_alumni(
         log_integrity_error("alumni", "update_alumni", ErrorCode.INVALID_INPUT.value, "Update failed", str(e))
         raise HTTPException(
             status_code=400,
-            detail={
-                "code": ErrorCode.INVALID_INPUT.value,
-                "message": "Update failed: Invalid input or duplicate entry"
-            }
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Update failed: Invalid input or duplicate entry"
+            ).model_dump(mode='json')
         )
     
     # Fetch full profile for response
@@ -402,7 +411,7 @@ def update_alumni(
             select(User).where(User.user_code == alumni.user_code)
         ).first()
     
-    return AlumniFullProfile(
+    profile = AlumniFullProfile(
         alumni_id=alumni.alumni_id,
         last_name=alumni.last_name,
         first_name=alumni.first_name,
@@ -424,6 +433,13 @@ def update_alumni(
         course_name=course.course_name if course else None,
         created_at=alumni.created_at,
         updated_at=alumni.updated_at
+    )
+    
+    return StandardResponse(
+        success=True,
+        code=SuccessCode.ALUMNI_UPDATED.value,
+        message=f"Alumni {alumni_id} updated successfully",
+        data=profile
     )
 
 

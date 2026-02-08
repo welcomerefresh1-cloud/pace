@@ -164,7 +164,7 @@ def get_all_users(
     )
 
 
-@router.get("/{user_id}", response_model=UserPublic)
+@router.get("/{user_id}")
 def get_user(user_id: str, session: Session = Depends(get_session)):
     """Get a specific user by user_id"""
     user = session.exec(
@@ -181,7 +181,12 @@ def get_user(user_id: str, session: Session = Depends(get_session)):
                 message="User not found"
             ).model_dump(mode='json')
         )
-    return user
+    return StandardResponse(
+        success=True,
+        code=SuccessCode.USER_RETRIEVED.value,
+        message=f"User {user_id} retrieved successfully",
+        data=UserPublic.model_validate(user)
+    )
 
 
 @router.put("/{user_id}")

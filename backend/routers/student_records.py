@@ -205,7 +205,7 @@ def get_all_student_records(
         data={"student_records": [StudentRecordPublic.model_validate(s) for s in students], "pagination": pagination}
     )
 
-@router.get("/{student_id}", response_model=StudentRecordPublic)
+@router.get("/{student_id}")
 def get_student_record(student_id: str, session: Session = Depends(get_session)):
     
     """Get a student record by student ID"""
@@ -223,7 +223,12 @@ def get_student_record(student_id: str, session: Session = Depends(get_session))
                 message="Student record not found"
             ).model_dump(mode='json')
         )
-    return student
+    return StandardResponse(
+        success=True,
+        code=SuccessCode.STUDENT_RECORD_RETRIEVED.value,
+        message=f"Student record {student_id} retrieved successfully",
+        data=StudentRecordPublic.model_validate(student)
+    )
 
 
 @router.put("/{student_id}")

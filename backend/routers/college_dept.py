@@ -155,7 +155,7 @@ def get_all_college_depts(
     )
 
 
-@router.get("/{college_dept_id}", response_model=CollegeDeptPublic)
+@router.get("/{college_dept_id}")
 def get_college_dept(college_dept_id: str, session: Session = Depends(get_session)):
     """Get a specific college department by college_dept_id"""
     college_dept = session.exec(
@@ -172,7 +172,12 @@ def get_college_dept(college_dept_id: str, session: Session = Depends(get_sessio
                 message="College department not found"
             ).model_dump(mode='json')
         )
-    return college_dept
+    return StandardResponse(
+        success=True,
+        code=SuccessCode.COLLEGE_DEPT_RETRIEVED.value,
+        message=f"College department {college_dept_id} retrieved successfully",
+        data=CollegeDeptPublic.model_validate(college_dept)
+    )
 
 
 @router.put("/{college_dept_id}")
