@@ -4,6 +4,7 @@ from sqlmodel import SQLModel
 from pydantic import field_serializer
 from utils.timezone import GMT8
 
+# Response for alumni full profile
 
 class AlumniFullProfile(SQLModel):
     """Complete alumni profile with all related information"""
@@ -30,9 +31,9 @@ class AlumniFullProfile(SQLModel):
     leadership_pos: Optional[bool]
     act_member_pos: Optional[bool]
     
-    # Degree info
-    degree_id: Optional[str]
-    degree_name: Optional[str]
+    # Course info
+    course_id: Optional[str]
+    course_name: Optional[str]
     
     # Timestamps
     created_at: datetime

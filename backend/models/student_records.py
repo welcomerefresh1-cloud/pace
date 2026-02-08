@@ -21,19 +21,19 @@ class StudentRecord(StudentRecordBase, table=True):
     __tablename__ = "student_records"
     
     student_code: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    degree_code: uuid.UUID = Field(foreign_key="degrees.degree_code", ondelete="CASCADE")
+    course_code: uuid.UUID = Field(foreign_key="courses.course_code", ondelete="CASCADE")
     alumni_code: uuid.UUID = Field(foreign_key="alumni.alumni_code", unique=True, ondelete="CASCADE")
     created_at: datetime = Field(default_factory=get_current_time_gmt8)
 
 
 class StudentRecordCreate(StudentRecordBase):
-    degree_id: str  # Reference to degree by degree_id
+    course_abbv: str  # Reference to course by abbreviation
     alumni_id: str  # Link to alumni
     
-    @field_validator('degree_id', 'alumni_id', mode='before')
+    @field_validator('course_abbv', 'alumni_id', mode='before')
     @classmethod
     def uppercase_ids(cls, v):
-        """Convert IDs to uppercase for case-insensitive matching"""
+        """Convert values to uppercase for case-insensitive matching"""
         if isinstance(v, str):
             return v.upper()
         return v

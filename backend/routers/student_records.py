@@ -3,7 +3,7 @@ from sqlmodel import Session, select, func
 from sqlalchemy.exc import IntegrityError
 from core.database import get_session
 from models.student_records import StudentRecord, StudentRecordCreate, StudentRecordUpdate, StudentRecordPublic
-from models.degrees import Degree
+from models.courses import Course
 from models.alumni import Alumni
 from models.response_codes import ErrorCode, SuccessCode, StandardResponse
 from models.pagination import PaginatedResponse, PaginationMetadata
@@ -12,25 +12,25 @@ from utils.logging import log_error, log_integrity_error
 router = APIRouter(prefix="/student-records", tags=["student-records"])
 
 
-@router.post("", response_model=StudentRecordPublic)
+@router.post("")
 def create_student_record(
     student_data: StudentRecordCreate,
     session: Session = Depends(get_session)
 ):
     """Create a new student record linked to an alumni"""
-    # Verify degree exists
-    degree = session.exec(
-        select(Degree).where(Degree.degree_id == student_data.degree_id)
+    # Verify course exists
+    course = session.exec(
+        select(Course).where(Course.course_abbv == student_data.course_abbv.upper())
     ).first()
     
-    if not degree:
-        log_error("student_records", "create_student_record", ErrorCode.DEGREE_NOT_FOUND.value, f"Degree {student_data.degree_id} not found")
+    if not course:
+        log_error("student_records", "create_student_record", ErrorCode.DEGREE_NOT_FOUND.value, f"Course {student_data.course_abbv} not found")
         raise HTTPException(
             status_code=404,
             detail=StandardResponse(
                 success=False,
                 code=ErrorCode.DEGREE_NOT_FOUND.value,
-                message="Degree not found"
+                message="Course not found"
             ).model_dump(mode='json')
         )
     
@@ -51,8 +51,8 @@ def create_student_record(
         )
     
     # Convert Pydantic model to dict and extract non-StudentRecord fields
-    student_dict = student_data.model_dump(exclude={"alumni_id", "degree_id"})
-    student_dict["degree_code"] = degree.degree_code
+    student_dict = student_data.model_dump(exclude={"alumni_id", "course_abbv"})
+    student_dict["course_code"] = course.course_code
     student_dict["alumni_code"] = alumni.alumni_code
     
     new_student = StudentRecord.model_validate(student_dict)
@@ -96,14 +96,14 @@ def create_student_record(
                     message="This alumni already has a student record"
                 ).model_dump(mode='json')
             )
-        elif "student_records_degree_code_fkey" in error_str or "degree_code" in error_str:
-            log_integrity_error("student_records", "create_student_record", ErrorCode.DEGREE_NOT_FOUND.value, "Specified degree does not exist", str(e))
+        elif "student_records_course_code_fkey" in error_str or "course_code" in error_str:
+            log_integrity_error("student_records", "create_student_record", ErrorCode.DEGREE_NOT_FOUND.value, "Specified course does not exist", str(e))
             raise HTTPException(
                 status_code=400,
                 detail=StandardResponse(
                     success=False,
                     code=ErrorCode.DEGREE_NOT_FOUND.value,
-                    message="Specified degree does not exist"
+                    message="Specified course does not exist"
                 ).model_dump(mode='json')
             )
         elif "student_records_alumni_code_fkey" in error_str or "alumni_code" in error_str:
@@ -185,7 +185,7 @@ def get_student_record(student_id: str, session: Session = Depends(get_session))
     return student
 
 
-@router.put("/{student_id}", response_model=StudentRecordPublic)
+@router.put("/{student_id}")
 def update_student_record(
     student_id: str,
     student_data: StudentRecordUpdate,
@@ -269,14 +269,14 @@ def update_student_record(
                     message="This alumni already has a student record"
                 ).model_dump(mode='json')
             )
-        elif "student_records_degree_code_fkey" in error_str or "degree_code" in error_str:
-            log_integrity_error("student_records", "update_student_record", ErrorCode.DEGREE_NOT_FOUND.value, "Specified degree does not exist", str(e))
+        elif "student_records_course_code_fkey" in error_str or "course_code" in error_str:
+            log_integrity_error("student_records", "update_student_record", ErrorCode.DEGREE_NOT_FOUND.value, "Specified course does not exist", str(e))
             raise HTTPException(
                 status_code=400,
                 detail=StandardResponse(
                     success=False,
                     code=ErrorCode.DEGREE_NOT_FOUND.value,
-                    message="Specified degree does not exist"
+                    message="Specified course does not exist"
                 ).model_dump(mode='json')
             )
         elif "student_records_alumni_code_fkey" in error_str or "alumni_code" in error_str:
