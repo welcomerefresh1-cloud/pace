@@ -37,6 +37,10 @@ class ErrorCode(str, Enum):
     
     # Validation errors
     INVALID_INPUT = "INVALID_INPUT"
+    INVALID_EMAIL = "INVALID_EMAIL"
+    INVALID_PASSWORD = "INVALID_PASSWORD"
+    INVALID_YEAR_GRADUATED = "INVALID_YEAR_GRADUATED"
+    INVALID_AGE = "INVALID_AGE"
     
     # Generic errors
     REGISTRATION_FAILED = "REGISTRATION_FAILED"
@@ -46,9 +50,9 @@ class SuccessCode(str, Enum):
     """Success codes for API responses"""
     # User operations
     USER_CREATED = "USER_CREATED"
-    USER_UPDATED = "USER_UPDATED"
     USER_RETRIEVED = "USER_RETRIEVED"
     USERS_RETRIEVED = "USERS_RETRIEVED"
+    USER_UPDATED = "USER_UPDATED"
     USER_DELETED = "USER_DELETED"
     
     # Alumni operations

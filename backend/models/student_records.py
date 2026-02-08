@@ -30,6 +30,17 @@ class StudentRecordCreate(StudentRecordBase):
     course_abbv: str  # Reference to course by abbreviation
     alumni_id: str  # Link to alumni
     
+    @field_validator('year_graduated')
+    @classmethod
+    def validate_year_graduated(cls, v):
+        """Validate year graduated is not in the future"""
+        current_year = datetime.now().year
+        if v > current_year:
+            raise ValueError(f'Year graduated cannot be in the future (max: {current_year})')
+        if v < 1950:
+            raise ValueError('Year graduated must be 1950 or later')
+        return v
+    
     @field_validator('course_abbv', 'alumni_id', mode='before')
     @classmethod
     def uppercase_ids(cls, v):
@@ -48,6 +59,18 @@ class StudentRecordUpdate(SQLModel):
     leadership_pos: Optional[bool] = None
     act_member_pos: Optional[bool] = None
     alumni_id: Optional[str] = None  # Optional link to alumni
+    
+    @field_validator('year_graduated')
+    @classmethod
+    def validate_year_graduated(cls, v):
+        """Validate year graduated is not in the future if provided"""
+        if v is not None:
+            current_year = datetime.now().year
+            if v > current_year:
+                raise ValueError(f'Year graduated cannot be in the future (max: {current_year})')
+            if v < 1950:
+                raise ValueError('Year graduated must be 1950 or later')
+        return v
     
     @field_validator('alumni_id', mode='before')
     @classmethod

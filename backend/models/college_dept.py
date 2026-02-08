@@ -31,6 +31,14 @@ class CollegeDeptCreate(CollegeDeptBase):
         if isinstance(v, str):
             return v.upper()
         return v
+    
+    @field_validator('college_dept_abbv', 'college_dept_name')
+    @classmethod
+    def validate_non_empty(cls, v):
+        """Ensure abbreviation and name are not empty"""
+        if isinstance(v, str) and not v.strip():
+            raise ValueError('This field cannot be empty')
+        return v
 
 
 class CollegeDeptUpdate(SQLModel):
@@ -44,6 +52,14 @@ class CollegeDeptUpdate(SQLModel):
         """Convert college_dept_abbv to uppercase"""
         if v is not None and isinstance(v, str):
             return v.upper()
+        return v
+    
+    @field_validator('college_dept_abbv', 'college_dept_name')
+    @classmethod
+    def validate_non_empty(cls, v):
+        """Ensure abbreviation and name are not empty if provided"""
+        if v is not None and isinstance(v, str) and not v.strip():
+            raise ValueError('This field cannot be empty')
         return v
 
 

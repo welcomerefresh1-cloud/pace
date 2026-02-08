@@ -36,6 +36,14 @@ class AlumniCreate(AlumniBase):
         if isinstance(v, str):
             return v.upper()
         return v
+    
+    @field_validator('age')
+    @classmethod
+    def validate_age(cls, v):
+        """Validate age is valid"""
+        if v < 0:
+            raise ValueError('Invalid age')
+        return v
 
 
 class AlumniPublic(AlumniBase):
@@ -65,4 +73,12 @@ class AlumniUpdate(SQLModel):
         """Convert gender to uppercase for case-insensitive input"""
         if v is not None and isinstance(v, str):
             return v.upper()
+        return v
+    
+    @field_validator('age')
+    @classmethod
+    def validate_age(cls, v):
+        """Validate age is valid if provided"""
+        if v is not None and v < 0:
+            raise ValueError('Invalid age')
         return v

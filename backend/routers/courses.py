@@ -123,14 +123,46 @@ def create_course(
 def get_all_courses(
     limit: int = Query(10, ge=0, description="Records per page (0 = all records)"),
     offset: int = Query(0, ge=0, description="Number of records to skip"),
+    search: str = Query(None, description="Search by course abbreviation or name"),
+    college_dept_abbv: str = Query(None, description="Filter by college department abbreviation"),
+    sort_by: str = Query("course_id", description="Sort by field (course_id, course_abbv, course_name)"),
+    sort_order: str = Query("asc", description="Sort order (asc, desc)"),
     session: Session = Depends(get_session)
 ):
-    """Get all courses with pagination"""
-    # Get total count
-    total = session.exec(select(func.count(Course.course_code))).one()
-    
-    # Get paginated data
+    """Get all courses with filtering, searching, and sorting"""
+    # Build query
     query = select(Course)
+    
+    # Apply search filter
+    if search:
+        search_like = f"%{search}%"
+        query = query.where(
+            (Course.course_abbv.ilike(search_like)) | 
+            (Course.course_name.ilike(search_like)) |
+            (Course.course_desc.ilike(search_like))
+        )
+    
+    # Apply college_dept filter
+    if college_dept_abbv:
+        college_dept = session.exec(
+            select(CollegeDept).where(CollegeDept.college_dept_abbv == college_dept_abbv.upper())
+        ).first()
+        if college_dept:
+            query = query.where(Course.college_dept_code == college_dept.college_dept_code)
+    
+    # Get total count after filters
+    total = session.exec(select(func.count(Course.course_code)).select_from(query.froms[0]).where(query.whereclause)).one() if query.whereclause else session.exec(select(func.count(Course.course_code))).one()
+    
+    # Apply sorting
+    sort_order_desc = sort_order.lower() == "desc"
+    if sort_by.lower() == "course_abbv":
+        query = query.order_by(Course.course_abbv.desc() if sort_order_desc else Course.course_abbv)
+    elif sort_by.lower() == "course_name":
+        query = query.order_by(Course.course_name.desc() if sort_order_desc else Course.course_name)
+    else:  # default to course_id
+        query = query.order_by(Course.course_id.desc() if sort_order_desc else Course.course_id)
+    
+    # Apply pagination
     if limit > 0:
         query = query.offset(offset).limit(limit)
     
@@ -169,7 +201,7 @@ def get_all_courses(
     )
 
 
-@router.get("/{course_id}", response_model=CoursePublic)
+@router.get("/{course_id}")
 def get_course(course_id: str, session: Session = Depends(get_session)):
     """Get a specific course by course_id"""
     course = session.exec(
@@ -192,10 +224,15 @@ def get_course(course_id: str, session: Session = Depends(get_session)):
         select(CollegeDept).where(CollegeDept.college_dept_code == course.college_dept_code)
     ).first()
     
-    return CoursePublic(
-        **course.model_dump(exclude={"college_dept_code"}),
-        college_dept_id=college_dept.college_dept_id if college_dept else "UNKNOWN",
-        college_dept_name=college_dept.college_dept_name if college_dept else "Unknown Department"
+    return StandardResponse(
+        success=True,
+        code=SuccessCode.COURSE_RETRIEVED.value,
+        message=f"Course {course_id} retrieved successfully",
+        data=CoursePublic(
+            **course.model_dump(exclude={"college_dept_code"}),
+            college_dept_id=college_dept.college_dept_id if college_dept else "UNKNOWN",
+            college_dept_name=college_dept.college_dept_name if college_dept else "Unknown Department"
+        )
     )
 
 

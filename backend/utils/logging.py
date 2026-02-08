@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 # Create logs directory if it doesn't exist
-LOGS_DIR = Path(__file__).parent.parent / "logs"
+LOGS_DIR = Path(__file__).parent.parent / ".logs"
 LOGS_DIR.mkdir(exist_ok=True)
 
 # Create error log file with date

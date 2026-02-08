@@ -1,4 +1,5 @@
 import uuid
+import re
 from datetime import datetime, timezone
 from typing import Optional
 from enum import Enum
@@ -35,20 +36,35 @@ class UserCreate(SQLModel):
     password: str = Field(min_length=8, max_length=72)
     user_type: UserType = Field(default=UserType.USER)
     
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, v):
+        """Validate email format"""
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, v):
+            raise ValueError('Invalid email format')
+        return v.lower()  # Store emails in lowercase
+    
+    @field_validator('password')
+    @classmethod
+    def validate_password_strength(cls, v):
+        """Validate password strength, then hash"""
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters long')
+        if not re.search(r'[A-Z]', v):
+            raise ValueError('Password must contain at least one uppercase letter')
+        if not re.search(r'[a-z]', v):
+            raise ValueError('Password must contain at least one lowercase letter')
+        if not re.search(r'\d', v):
+            raise ValueError('Password must contain at least one number')
+        return hash_password(v)  # Hash after validation passes
+    
     @field_validator('user_type', mode='before')
     @classmethod
     def validate_user_type(cls, v):
         """Convert user_type to uppercase for case-insensitive input"""
         if isinstance(v, str):
             return v.upper()
-        return v
-    
-    @field_validator('password', mode='before')
-    @classmethod
-    def hash_password_on_creation(cls, v):
-        """Hash password before storing"""
-        if isinstance(v, str):
-            return hash_password(v)
         return v
 
 
@@ -72,12 +88,31 @@ class UserUpdate(SQLModel):
     current_password: Optional[str] = Field(default=None, min_length=8, max_length=72)
     password: Optional[str] = Field(default=None, min_length=8, max_length=72)
     
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, v):
+        """Validate email format if provided"""
+        if v is not None:
+            email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+            if not re.match(email_pattern, v):
+                raise ValueError('Invalid email format')
+            return v.lower()
+        return v
+    
     @field_validator('password')
     @classmethod
-    def hash_password_field(cls, v):
-        """Hash password before storing if provided"""
+    def validate_password_strength(cls, v):
+        """Validate password strength if provided, then hash"""
         if v is not None:
-            return hash_password(v)
+            if len(v) < 8:
+                raise ValueError('Password must be at least 8 characters long')
+            if not re.search(r'[A-Z]', v):
+                raise ValueError('Password must contain at least one uppercase letter')
+            if not re.search(r'[a-z]', v):
+                raise ValueError('Password must contain at least one lowercase letter')
+            if not re.search(r'\d', v):
+                raise ValueError('Password must contain at least one number')
+            return hash_password(v)  # Hash after validation passes
         return v
 
 

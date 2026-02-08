@@ -50,4 +50,8 @@ __pycache__/
 # data files
 .data/
 
+# logs
+.logs/
+logs/
+
 next-env.d.ts
