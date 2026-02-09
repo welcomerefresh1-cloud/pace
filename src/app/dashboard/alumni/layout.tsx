@@ -55,20 +55,20 @@ export default function AlumniLayout({
                 `}
             >
                 {/* Logo Section */}
-                <div className="flex h-20 items-center justify-between px-6 border-b border-gray-200/60 bg-white/50 backdrop-blur-sm">
+                <div className="flex h-[72px] items-center justify-between px-6 border-b border-gray-200/60 bg-white/60 backdrop-blur-sm">
                     <Link href="/" className="flex items-center gap-3 group">
-                        <div className="relative h-11 w-11 flex-shrink-0 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 p-1.5 shadow-sm group-hover:shadow-md transition-shadow duration-200">
+                        <div className="relative h-10 w-10 flex-shrink-0">
                             <img
                                 src="/plp-logo.png"
                                 alt="PLP Logo"
-                                width="38"
-                                height="38"
-                                className="object-contain rounded-lg"
+                                width="40"
+                                height="40"
+                                className="object-contain"
                             />
                         </div>
                         <div className="flex flex-col">
-                            <span className="text-[15px] font-bold text-gray-900 tracking-tight leading-tight">P.A.C.E.</span>
-                            <span className="text-[10px] text-emerald-600 font-semibold tracking-[0.08em] uppercase mt-0.5">Alumni Portal</span>
+                            <span className="text-[16px] font-bold text-gray-900 tracking-tight leading-tight">P.A.C.E.</span>
+                            <span className="text-[10px] text-emerald-600 font-semibold tracking-[0.1em] uppercase mt-0.5">Alumni Portal</span>
                         </div>
                     </Link>
                     <button
@@ -80,14 +80,14 @@ export default function AlumniLayout({
                 </div>
 
                 {/* Navigation Section */}
-                <nav className="flex-1 overflow-y-auto px-3 py-5">
+                <nav className="flex-1 overflow-y-auto px-3 py-6">
                     {/* Navigation Label */}
                     <div className="px-3 mb-3">
                         <span className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.15em]">Navigation</span>
                     </div>
 
                     {/* Navigation Items */}
-                    <div className="space-y-1">
+                    <div className="space-y-0.5">
                         {navItems.map((item) => {
                             const isActive = pathname === item.href;
                             return (
@@ -98,14 +98,14 @@ export default function AlumniLayout({
                                         group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium
                                         transition-all duration-200 ease-out
                                         ${isActive
-                                            ? "bg-emerald-500 text-white shadow-md shadow-emerald-500/20"
-                                            : "text-gray-600 hover:text-gray-900 hover:bg-white/80"
+                                            ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/25"
+                                            : "text-gray-600 hover:text-gray-900 hover:bg-white/90 hover:shadow-sm"
                                         }
                                     `}
                                 >
                                     {/* Active indicator bar */}
                                     {isActive && (
-                                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-white/90 rounded-r-full shadow-sm" />
+                                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-9 bg-white/95 rounded-r-full" />
                                     )}
 
                                     {/* Icon */}
@@ -120,12 +120,12 @@ export default function AlumniLayout({
                                     </span>
                                     
                                     {/* Label */}
-                                    <span className="flex-1">{item.name}</span>
+                                    <span className="flex-1 font-medium">{item.name}</span>
 
                                     {/* Active arrow indicator */}
                                     {isActive && (
                                         <svg
-                                            className="w-4 h-4 text-white/80"
+                                            className="w-4 h-4 text-white/90"
                                             fill="none"
                                             viewBox="0 0 24 24"
                                             stroke="currentColor"
@@ -149,13 +149,13 @@ export default function AlumniLayout({
                                 group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium
                                 transition-all duration-200 ease-out
                                 ${pathname === "/dashboard/alumni/settings"
-                                    ? "bg-emerald-500 text-white shadow-md shadow-emerald-500/20"
-                                    : "text-gray-600 hover:text-gray-900 hover:bg-white/80"
+                                    ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/25"
+                                    : "text-gray-600 hover:text-gray-900 hover:bg-white/90 hover:shadow-sm"
                                 }
                             `}
                         >
                             {pathname === "/dashboard/alumni/settings" && (
-                                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-white/90 rounded-r-full shadow-sm" />
+                                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-9 bg-white/95 rounded-r-full" />
                             )}
                             <span className={`
                                 flex items-center justify-center w-9 h-9 rounded-lg transition-all duration-200
@@ -166,10 +166,10 @@ export default function AlumniLayout({
                             `}>
                                 <SettingsIcon />
                             </span>
-                            <span className="flex-1">Settings</span>
+                            <span className="flex-1 font-medium">Settings</span>
                             {pathname === "/dashboard/alumni/settings" && (
                                 <svg
-                                    className="w-4 h-4 text-white/80"
+                                    className="w-4 h-4 text-white/90"
                                     fill="none"
                                     viewBox="0 0 24 24"
                                     stroke="currentColor"
@@ -182,8 +182,8 @@ export default function AlumniLayout({
                 </nav>
 
                 {/* User Section */}
-                <div className="p-4 border-t border-gray-200/60 bg-white/50 backdrop-blur-sm">
-                    <div className="flex items-center gap-3 rounded-xl bg-gradient-to-br from-gray-50 to-white p-3.5 border border-gray-200/60 shadow-sm hover:shadow-md transition-shadow duration-200">
+                <div className="p-4 border-t border-gray-200/60 bg-white/60 backdrop-blur-sm">
+                    <div className="flex items-center gap-3 rounded-xl bg-gradient-to-br from-gray-50/80 to-white p-3.5 border border-gray-200/60 shadow-sm hover:shadow-md hover:border-gray-300/60 transition-all duration-200">
                         {/* Avatar */}
                         <div className="relative flex-shrink-0">
                             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 text-xs font-bold text-white shadow-md ring-2 ring-white">
