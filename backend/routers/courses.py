@@ -2,7 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select, func
 from sqlalchemy.exc import IntegrityError
 from core.database import get_session
-from models.courses import Course, CourseCreate, CourseUpdate, CoursePublic
+from models.courses import (
+    Course, CourseCreate, CourseUpdate, CoursePublic,
+    CourseBulkCreate, CourseBulkCreateResponse, CourseBulkCreateItem,
+    CourseBulkUpdate, CourseBulkUpdateResponse, CourseBulkUpdateResult,
+    CourseBulkDelete, CourseBulkDeleteResponse, CourseBulkDeleteResult
+)
 from models.college_dept import CollegeDept
 from models.response_codes import ErrorCode, SuccessCode, StandardResponse
 from models.pagination import PaginationMetadata
@@ -24,6 +29,384 @@ def generate_course_id(session: Session) -> str:
         new_num = 1
     
     return f"CRS-{new_num:06d}"  # Format: CRS-000001
+
+
+@router.post("/bulk")
+def bulk_create_courses(
+    bulk_data: CourseBulkCreate,
+    session: Session = Depends(get_session)
+):
+    """Bulk create courses"""
+    results = []
+    successful_count = 0
+    failed_count = 0
+    
+    for index, course_item in enumerate(bulk_data.items):
+        try:
+            # Verify college department exists and get its code
+            college_dept = session.exec(
+                select(CollegeDept).where(CollegeDept.college_dept_abbv == course_item.college_dept_abbv.upper())
+            ).first()
+            
+            if not college_dept:
+                error_code = ErrorCode.COLLEGE_DEPT_NOT_FOUND.value
+                error_msg = f"College department '{course_item.college_dept_abbv}' not found"
+                
+                results.append(CourseBulkCreateItem(
+                    index=index,
+                    item=course_item,
+                    success=False,
+                    code=error_code,
+                    message=error_msg,
+                    data=None
+                ))
+                failed_count += 1
+                continue
+            
+            # Generate course_id
+            course_id = generate_course_id(session)
+            
+            # Create course
+            course_dict = course_item.model_dump(exclude={"college_dept_abbv"})
+            course_dict["course_id"] = course_id
+            course_dict["college_dept_code"] = college_dept.college_dept_code
+            
+            new_course = Course.model_validate(course_dict)
+            session.add(new_course)
+            session.flush()  # Flush to get the ID but don't commit yet
+            session.refresh(new_course)
+            
+            # Record successful creation
+            results.append(CourseBulkCreateItem(
+                index=index,
+                item=course_item,
+                success=True,
+                code=SuccessCode.COURSE_CREATED.value,
+                message="Course created successfully",
+                data=CoursePublic(
+                    **new_course.model_dump(exclude={"college_dept_code"}),
+                    college_dept_id=college_dept.college_dept_id,
+                    college_dept_name=college_dept.college_dept_name
+                )
+            ))
+            successful_count += 1
+        
+        except IntegrityError as e:
+            session.rollback()
+            error_str = str(e).lower()
+            
+            if "ix_courses_course_abbv" in error_str or "courses_course_abbv_key" in error_str:
+                error_code = ErrorCode.DUPLICATE_COURSE_ABBV.value
+                error_msg = f"Course abbreviation '{course_item.course_abbv}' already exists"
+            elif "ix_courses_course_name" in error_str or "courses_course_name_key" in error_str:
+                error_code = ErrorCode.DUPLICATE_COURSE_NAME.value
+                error_msg = f"Course name '{course_item.course_name}' already exists"
+            else:
+                error_code = ErrorCode.INVALID_INPUT.value
+                error_msg = "Course creation failed due to constraint violation"
+            
+            results.append(CourseBulkCreateItem(
+                index=index,
+                item=course_item,
+                success=False,
+                code=error_code,
+                message=error_msg,
+                data=None
+            ))
+            failed_count += 1
+        
+        except ValueError as e:
+            error_msg = str(e)
+            error_code = ErrorCode.INVALID_INPUT.value
+            
+            results.append(CourseBulkCreateItem(
+                index=index,
+                item=course_item,
+                success=False,
+                code=error_code,
+                message=error_msg,
+                data=None
+            ))
+            failed_count += 1
+    
+    # Commit all successful operations
+    try:
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Bulk create operation failed during commit"
+            ).model_dump(mode='json')
+        )
+    
+    bulk_response = CourseBulkCreateResponse(
+        total_items=len(bulk_data.items),
+        successful=successful_count,
+        failed=failed_count,
+        results=results
+    )
+    
+    return StandardResponse(
+        success=failed_count == 0,  # True only if all succeeded
+        code=SuccessCode.COURSES_BULK_CREATED.value,
+        message=f"Bulk create completed: {successful_count} successful, {failed_count} failed",
+        data=bulk_response
+    )
+
+
+@router.put("/bulk")
+def bulk_update_courses(
+    bulk_data: CourseBulkUpdate,
+    session: Session = Depends(get_session)
+):
+    """Bulk update courses"""
+    results = []
+    successful_count = 0
+    failed_count = 0
+    
+    for index, update_item in enumerate(bulk_data.items):
+        try:
+            # Find course
+            course = session.exec(
+                select(Course).where(Course.course_id == update_item.course_id.upper())
+            ).first()
+            
+            if not course:
+                results.append(CourseBulkUpdateResult(
+                    index=index,
+                    course_id=update_item.course_id,
+                    success=False,
+                    code=ErrorCode.COURSE_NOT_FOUND.value,
+                    message=f"Course '{update_item.course_id}' not found",
+                    data=None
+                ))
+                failed_count += 1
+                continue
+            
+            # If college_dept_abbv is provided, verify it exists and update
+            if update_item.college_dept_abbv is not None:
+                college_dept = session.exec(
+                    select(CollegeDept).where(CollegeDept.college_dept_abbv == update_item.college_dept_abbv.upper())
+                ).first()
+                
+                if not college_dept:
+                    results.append(CourseBulkUpdateResult(
+                        index=index,
+                        course_id=update_item.course_id,
+                        success=False,
+                        code=ErrorCode.COLLEGE_DEPT_NOT_FOUND.value,
+                        message=f"College department '{update_item.college_dept_abbv}' not found",
+                        data=None
+                    ))
+                    failed_count += 1
+                    continue
+                
+                course.college_dept_code = college_dept.college_dept_code
+            else:
+                # Get current college dept for response
+                college_dept = session.exec(
+                    select(CollegeDept).where(CollegeDept.college_dept_code == course.college_dept_code)
+                ).first()
+            
+            # Update only provided fields
+            if update_item.course_abbv is not None:
+                course.course_abbv = update_item.course_abbv
+            if update_item.course_name is not None:
+                course.course_name = update_item.course_name
+            if update_item.course_desc is not None:
+                course.course_desc = update_item.course_desc
+            
+            # Update timestamp
+            from datetime import datetime, timezone
+            course.updated_at = datetime.now(timezone.utc)
+            
+            session.add(course)
+            session.flush()
+            session.refresh(course)
+            
+            # Record successful update
+            results.append(CourseBulkUpdateResult(
+                index=index,
+                course_id=update_item.course_id,
+                success=True,
+                code=SuccessCode.COURSE_UPDATED.value,
+                message="Course updated successfully",
+                data=CoursePublic(
+                    **course.model_dump(exclude={"college_dept_code"}),
+                    college_dept_id=college_dept.college_dept_id if college_dept else "UNKNOWN",
+                    college_dept_name=college_dept.college_dept_name if college_dept else "Unknown Department"
+                )
+            ))
+            successful_count += 1
+        
+        except IntegrityError as e:
+            session.rollback()
+            error_str = str(e).lower()
+            
+            if "ix_courses_course_abbv" in error_str or "courses_course_abbv_key" in error_str:
+                error_code = ErrorCode.DUPLICATE_COURSE_ABBV.value
+                error_msg = f"Course abbreviation already in use"
+            elif "ix_courses_course_name" in error_str or "courses_course_name_key" in error_str:
+                error_code = ErrorCode.DUPLICATE_COURSE_NAME.value
+                error_msg = f"Course name already in use"
+            else:
+                error_code = ErrorCode.INVALID_INPUT.value
+                error_msg = "Update failed due to constraint violation"
+            
+            results.append(CourseBulkUpdateResult(
+                index=index,
+                course_id=update_item.course_id,
+                success=False,
+                code=error_code,
+                message=error_msg,
+                data=None
+            ))
+            failed_count += 1
+        
+        except ValueError as e:
+            error_msg = str(e)
+            error_code = ErrorCode.INVALID_INPUT.value
+            
+            results.append(CourseBulkUpdateResult(
+                index=index,
+                course_id=update_item.course_id,
+                success=False,
+                code=error_code,
+                message=error_msg,
+                data=None
+            ))
+            failed_count += 1
+    
+    # Commit all successful operations
+    try:
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Bulk update operation failed during commit"
+            ).model_dump(mode='json')
+        )
+    
+    bulk_response = CourseBulkUpdateResponse(
+        total_items=len(bulk_data.items),
+        successful=successful_count,
+        failed=failed_count,
+        results=results
+    )
+    
+    return StandardResponse(
+        success=failed_count == 0,
+        code=SuccessCode.COURSES_BULK_UPDATED.value,
+        message=f"Bulk update completed: {successful_count} successful, {failed_count} failed",
+        data=bulk_response
+    )
+
+
+@router.delete("/bulk")
+def bulk_delete_courses(
+    bulk_data: CourseBulkDelete,
+    session: Session = Depends(get_session)
+):
+    """Bulk delete courses"""
+    results = []
+    successful_count = 0
+    failed_count = 0
+    
+    for index, course_id in enumerate(bulk_data.ids):
+        try:
+            # Find course
+            course = session.exec(
+                select(Course).where(Course.course_id == course_id.upper())
+            ).first()
+            
+            if not course:
+                results.append(CourseBulkDeleteResult(
+                    index=index,
+                    course_id=course_id,
+                    success=False,
+                    code=ErrorCode.COURSE_NOT_FOUND.value,
+                    message=f"Course '{course_id}' not found"
+                ))
+                failed_count += 1
+                continue
+            
+            # Delete course
+            session.delete(course)
+            session.flush()
+            
+            # Record successful deletion
+            results.append(CourseBulkDeleteResult(
+                index=index,
+                course_id=course_id,
+                success=True,
+                code=SuccessCode.COURSE_DELETED.value,
+                message="Course deleted successfully"
+            ))
+            successful_count += 1
+        
+        except IntegrityError as e:
+            session.rollback()
+            error_code = ErrorCode.INVALID_INPUT.value
+            error_msg = "Delete failed: Constraint violation or related data exists"
+            
+            results.append(CourseBulkDeleteResult(
+                index=index,
+                course_id=course_id,
+                success=False,
+                code=error_code,
+                message=error_msg
+            ))
+            failed_count += 1
+        
+        except Exception as e:
+            session.rollback()
+            error_code = ErrorCode.INVALID_INPUT.value
+            error_msg = f"Delete failed: {str(e)}"
+            
+            results.append(CourseBulkDeleteResult(
+                index=index,
+                course_id=course_id,
+                success=False,
+                code=error_code,
+                message=error_msg
+            ))
+            failed_count += 1
+    
+    # Commit all successful operations
+    try:
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Bulk delete operation failed during commit"
+            ).model_dump(mode='json')
+        )
+    
+    bulk_response = CourseBulkDeleteResponse(
+        total_items=len(bulk_data.ids),
+        successful=successful_count,
+        failed=failed_count,
+        results=results
+    )
+    
+    return StandardResponse(
+        success=failed_count == 0,
+        code=SuccessCode.COURSES_BULK_DELETED.value,
+        message=f"Bulk delete completed: {successful_count} successful, {failed_count} failed",
+        data=bulk_response
+    )
 
 
 @router.post("")
