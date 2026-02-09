@@ -2,7 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select, func
 from sqlalchemy.exc import IntegrityError
 from core.database import get_session
-from models.student_records import StudentRecord, StudentRecordCreate, StudentRecordUpdate, StudentRecordPublic
+from models.student_records import (
+    StudentRecord, StudentRecordCreate, StudentRecordUpdate, StudentRecordPublic,
+    StudentRecordCreateSafeDisplay, StudentRecordUpdateSafeDisplay,
+    StudentRecordBulkCreate, StudentRecordBulkCreateItem, StudentRecordBulkCreateResponse,
+    StudentRecordBulkUpdate, StudentRecordBulkUpdateItem, StudentRecordBulkUpdateResult, StudentRecordBulkUpdateResponse,
+    StudentRecordBulkDelete, StudentRecordBulkDeleteResult, StudentRecordBulkDeleteResponse
+)
 from models.courses import Course
 from models.alumni import Alumni
 from models.response_codes import ErrorCode, SuccessCode, StandardResponse
@@ -128,6 +134,165 @@ def create_student_record(
             )
 
 
+@router.post("/bulk")
+def bulk_create_student_records(
+    bulk_data: StudentRecordBulkCreate,
+    session: Session = Depends(get_session)
+):
+    """Bulk create student records"""
+    results = []
+    successful_count = 0
+    failed_count = 0
+    
+    for index, student_item in enumerate(bulk_data.items):
+        try:
+            # Verify course exists
+            course = session.exec(
+                select(Course).where(Course.course_abbv == student_item.course_abbv.upper())
+            ).first()
+            
+            if not course:
+                results.append(StudentRecordBulkCreateItem(
+                    index=index,
+                    item=StudentRecordCreateSafeDisplay(
+                        student_id=student_item.student_id,
+                        course_abbv=student_item.course_abbv,
+                        alumni_id=student_item.alumni_id
+                    ),
+                    success=False,
+                    code=ErrorCode.DEGREE_NOT_FOUND.value,
+                    message=f"Course '{student_item.course_abbv}' not found",
+                    data=None
+                ))
+                failed_count += 1
+                continue
+            
+            # Verify alumni exists
+            alumni = session.exec(
+                select(Alumni).where(Alumni.alumni_id == student_item.alumni_id)
+            ).first()
+            
+            if not alumni:
+                results.append(StudentRecordBulkCreateItem(
+                    index=index,
+                    item=StudentRecordCreateSafeDisplay(
+                        student_id=student_item.student_id,
+                        course_abbv=student_item.course_abbv,
+                        alumni_id=student_item.alumni_id
+                    ),
+                    success=False,
+                    code=ErrorCode.ALUMNI_NOT_FOUND.value,
+                    message=f"Alumni '{student_item.alumni_id}' not found",
+                    data=None
+                ))
+                failed_count += 1
+                continue
+            
+            # Create student record
+            student_dict = student_item.model_dump(exclude={"alumni_id", "course_abbv"})
+            student_dict["course_code"] = course.course_code
+            student_dict["alumni_code"] = alumni.alumni_code
+            
+            new_student = StudentRecord.model_validate(student_dict)
+            session.add(new_student)
+            session.flush()  # Get student_code
+            
+            # Update alumni's student_code for backwards compatibility
+            alumni.student_code = new_student.student_code
+            session.add(alumni)
+            session.flush()
+            session.refresh(new_student)
+            
+            # Record successful creation
+            results.append(StudentRecordBulkCreateItem(
+                index=index,
+                item=StudentRecordCreateSafeDisplay(
+                    student_id=student_item.student_id,
+                    course_abbv=student_item.course_abbv,
+                    alumni_id=student_item.alumni_id
+                ),
+                success=True,
+                code=SuccessCode.STUDENT_RECORD_CREATED.value,
+                message="Student record created successfully",
+                data=StudentRecordPublic.model_validate(new_student)
+            ))
+            successful_count += 1
+        
+        except IntegrityError as e:
+            session.rollback()
+            error_str = str(e).lower()
+            
+            if "ix_student_records_student_id" in error_str or "student_records_student_id_key" in error_str:
+                error_code = ErrorCode.DUPLICATE_STUDENT_ID.value
+                error_msg = f"Student ID '{student_item.student_id}' already exists"
+            elif "student_records_alumni_code_key" in error_str:
+                error_code = ErrorCode.ALUMNI_ALREADY_HAS_STUDENT_RECORD.value
+                error_msg = "This alumni already has a student record"
+            else:
+                error_code = ErrorCode.INVALID_INPUT.value
+                error_msg = "Student record creation failed due to constraint violation"
+            
+            results.append(StudentRecordBulkCreateItem(
+                index=index,
+                item=StudentRecordCreateSafeDisplay(
+                    student_id=student_item.student_id,
+                    course_abbv=student_item.course_abbv,
+                    alumni_id=student_item.alumni_id
+                ),
+                success=False,
+                code=error_code,
+                message=error_msg,
+                data=None
+            ))
+            failed_count += 1
+        
+        except ValueError as e:
+            error_msg = str(e)
+            error_code = ErrorCode.INVALID_INPUT.value
+            
+            results.append(StudentRecordBulkCreateItem(
+                index=index,
+                item=StudentRecordCreateSafeDisplay(
+                    student_id=student_item.student_id,
+                    course_abbv=student_item.course_abbv,
+                    alumni_id=student_item.alumni_id
+                ),
+                success=False,
+                code=error_code,
+                message=error_msg,
+                data=None
+            ))
+            failed_count += 1
+    
+    # Commit all successful operations
+    try:
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Bulk create operation failed during commit"
+            ).model_dump(mode='json')
+        )
+    
+    bulk_response = StudentRecordBulkCreateResponse(
+        total_items=len(bulk_data.items),
+        successful=successful_count,
+        failed=failed_count,
+        results=results
+    )
+    
+    return StandardResponse(
+        success=failed_count == 0,
+        code=SuccessCode.STUDENT_RECORDS_BULK_CREATED.value,
+        message=f"Bulk create completed: {successful_count} successful, {failed_count} failed",
+        data=bulk_response
+    )
+
+
 @router.get("")
 def get_all_student_records(
     limit: int = Query(10, ge=0, description="Records per page (0 = all records)"),
@@ -228,6 +393,176 @@ def get_student_record(student_id: str, session: Session = Depends(get_session))
         code=SuccessCode.STUDENT_RECORD_RETRIEVED.value,
         message=f"Student record {student_id} retrieved successfully",
         data=StudentRecordPublic.model_validate(student)
+    )
+
+
+@router.put("/bulk")
+def bulk_update_student_records(
+    bulk_data: StudentRecordBulkUpdate,
+    session: Session = Depends(get_session)
+):
+    """Bulk update student records"""
+    results = []
+    successful_count = 0
+    failed_count = 0
+    
+    for index, update_item in enumerate(bulk_data.items):
+        try:
+            # Find the student record
+            student = session.exec(
+                select(StudentRecord).where(StudentRecord.student_id == update_item.student_id.upper())
+            ).first()
+            
+            if not student:
+                results.append(StudentRecordBulkUpdateResult(
+                    index=index,
+                    item=StudentRecordUpdateSafeDisplay(
+                        student_id=update_item.student_id,
+                        year_graduated=update_item.year_graduated,
+                        gwa=update_item.gwa
+                    ),
+                    success=False,
+                    code=ErrorCode.STUDENT_RECORD_NOT_FOUND.value,
+                    message=f"Student record '{update_item.student_id}' not found",
+                    data=None
+                ))
+                failed_count += 1
+                continue
+            
+            # If alumni_id is provided, verify it exists and update the link
+            if update_item.alumni_id is not None:
+                alumni = session.exec(
+                    select(Alumni).where(Alumni.alumni_id == update_item.alumni_id)
+                ).first()
+                
+                if not alumni:
+                    results.append(StudentRecordBulkUpdateResult(
+                        index=index,
+                        item=StudentRecordUpdateSafeDisplay(
+                            student_id=update_item.student_id,
+                            year_graduated=update_item.year_graduated,
+                            gwa=update_item.gwa
+                        ),
+                        success=False,
+                        code=ErrorCode.ALUMNI_NOT_FOUND.value,
+                        message=f"Alumni '{update_item.alumni_id}' not found",
+                        data=None
+                    ))
+                    failed_count += 1
+                    continue
+                
+                # Update student's alumni_code link
+                student.alumni_code = alumni.alumni_code
+                alumni.student_code = student.student_code
+                session.add(alumni)
+            
+            # Update only provided fields
+            if update_item.year_graduated is not None:
+                student.year_graduated = update_item.year_graduated
+            if update_item.gwa is not None:
+                student.gwa = update_item.gwa
+            if update_item.avg_prof_grade is not None:
+                student.avg_prof_grade = update_item.avg_prof_grade
+            if update_item.avg_elec_grade is not None:
+                student.avg_elec_grade = update_item.avg_elec_grade
+            if update_item.ojt_grade is not None:
+                student.ojt_grade = update_item.ojt_grade
+            if update_item.leadership_pos is not None:
+                student.leadership_pos = update_item.leadership_pos
+            if update_item.act_member_pos is not None:
+                student.act_member_pos = update_item.act_member_pos
+            
+            session.add(student)
+            session.flush()
+            session.refresh(student)
+            
+            # Record successful update
+            results.append(StudentRecordBulkUpdateResult(
+                index=index,
+                item=StudentRecordUpdateSafeDisplay(
+                    student_id=update_item.student_id,
+                    year_graduated=update_item.year_graduated,
+                    gwa=update_item.gwa
+                ),
+                success=True,
+                code=SuccessCode.STUDENT_RECORD_UPDATED.value,
+                message="Student record updated successfully",
+                data=StudentRecordPublic.model_validate(student)
+            ))
+            successful_count += 1
+        
+        except IntegrityError as e:
+            session.rollback()
+            error_str = str(e).lower()
+            
+            if "student_records_alumni_code_key" in error_str:
+                error_code = ErrorCode.ALUMNI_ALREADY_HAS_STUDENT_RECORD.value
+                error_msg = "This alumni already has a student record"
+            elif "ix_student_records_student_id" in error_str or "student_records_student_id_key" in error_str:
+                error_code = ErrorCode.DUPLICATE_STUDENT_ID.value
+                error_msg = "Student ID already in use"
+            else:
+                error_code = ErrorCode.INVALID_INPUT.value
+                error_msg = "Student record update failed due to constraint violation"
+            
+            results.append(StudentRecordBulkUpdateResult(
+                index=index,
+                item=StudentRecordUpdateSafeDisplay(
+                    student_id=update_item.student_id,
+                    year_graduated=update_item.year_graduated,
+                    gwa=update_item.gwa
+                ),
+                success=False,
+                code=error_code,
+                message=error_msg,
+                data=None
+            ))
+            failed_count += 1
+        
+        except ValueError as e:
+            error_msg = str(e)
+            error_code = ErrorCode.INVALID_INPUT.value
+            
+            results.append(StudentRecordBulkUpdateResult(
+                index=index,
+                item=StudentRecordUpdateSafeDisplay(
+                    student_id=update_item.student_id,
+                    year_graduated=update_item.year_graduated,
+                    gwa=update_item.gwa
+                ),
+                success=False,
+                code=error_code,
+                message=error_msg,
+                data=None
+            ))
+            failed_count += 1
+    
+    # Commit all successful operations
+    try:
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Bulk update operation failed during commit"
+            ).model_dump(mode='json')
+        )
+    
+    bulk_response = StudentRecordBulkUpdateResponse(
+        total_items=len(bulk_data.items),
+        successful=successful_count,
+        failed=failed_count,
+        results=results
+    )
+    
+    return StandardResponse(
+        success=failed_count == 0,
+        code=SuccessCode.STUDENT_RECORDS_BULK_UPDATED.value,
+        message=f"Bulk update completed: {successful_count} successful, {failed_count} failed",
+        data=bulk_response
     )
 
 
@@ -356,6 +691,97 @@ def update_student_record(
                 ).model_dump(mode='json')
             )
 
+
+@router.delete("/bulk")
+def bulk_delete_student_records(
+    bulk_data: StudentRecordBulkDelete,
+    session: Session = Depends(get_session)
+):
+    """Bulk delete student records"""
+    results = []
+    successful_count = 0
+    failed_count = 0
+    
+    for index, student_id in enumerate(bulk_data.ids):
+        try:
+            # Find the student record
+            student = session.exec(
+                select(StudentRecord).where(StudentRecord.student_id == student_id.upper())
+            ).first()
+            
+            if not student:
+                results.append(StudentRecordBulkDeleteResult(
+                    index=index,
+                    student_id=student_id,
+                    success=False,
+                    code=ErrorCode.STUDENT_RECORD_NOT_FOUND.value,
+                    message=f"Student record '{student_id}' not found"
+                ))
+                failed_count += 1
+                continue
+            
+            session.delete(student)
+            session.flush()
+            
+            # Record successful deletion
+            results.append(StudentRecordBulkDeleteResult(
+                index=index,
+                student_id=student_id,
+                success=True,
+                code=SuccessCode.STUDENT_RECORD_DELETED.value,
+                message="Student record deleted successfully"
+            ))
+            successful_count += 1
+        
+        except IntegrityError as e:
+            session.rollback()
+            results.append(StudentRecordBulkDeleteResult(
+                index=index,
+                student_id=student_id,
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Student record deletion failed due to constraint violation"
+            ))
+            failed_count += 1
+        
+        except ValueError as e:
+            error_msg = str(e)
+            results.append(StudentRecordBulkDeleteResult(
+                index=index,
+                student_id=student_id,
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message=error_msg
+            ))
+            failed_count += 1
+    
+    # Commit all successful operations
+    try:
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Bulk delete operation failed during commit"
+            ).model_dump(mode='json')
+        )
+    
+    bulk_response = StudentRecordBulkDeleteResponse(
+        total_items=len(bulk_data.ids),
+        successful=successful_count,
+        failed=failed_count,
+        results=results
+    )
+    
+    return StandardResponse(
+        success=failed_count == 0,
+        code=SuccessCode.STUDENT_RECORDS_BULK_DELETED.value,
+        message=f"Bulk delete completed: {successful_count} successful, {failed_count} failed",
+        data=bulk_response
+    )
 
 @router.delete("/{student_id}")
 def delete_student_record(student_id: str, session: Session = Depends(get_session)):
