@@ -6,11 +6,17 @@ from models.users import User, UserType
 from models.courses import Course
 from models.student_records import StudentRecord
 from models.alumni import Alumni, AlumniCreate, AlumniUpdate, AlumniPublic
-from models.composite import CompleteAlumniRegistration, CompleteAlumniResponse
+from models.composite import (
+    CompleteAlumniRegistration, CompleteAlumniResponse,
+    BulkAlumniRegister, BulkAlumniRegistrationResult, BulkAlumniRegisterResponse, BulkAlumniRegistrationItemSafeDisplay,
+    BulkAlumniUpdate, BulkAlumniUpdateItem, BulkAlumniUpdateResult, BulkAlumniUpdateResponse,
+    BulkAlumniDelete, BulkAlumniDeleteResult, BulkAlumniDeleteResponse
+)
 from models.responses import AlumniFullProfile
 from models.response_codes import ErrorCode, SuccessCode, StandardResponse
 from models.pagination import PaginatedResponse, PaginationMetadata
 from utils.logging import log_error, log_integrity_error
+from utils.auth import hash_password
 
 router = APIRouter(prefix="/alumni", tags=["alumni"])
 
@@ -150,6 +156,178 @@ def register_complete_alumni(
                 message="Registration failed"
             ).model_dump(mode='json')
         )
+
+
+@router.post("/bulk/register")
+def bulk_register_alumni(
+    bulk_data: BulkAlumniRegister,
+    session: Session = Depends(get_session)
+):
+    """Bulk create alumni profiles (creates both User and Alumni for each item)"""
+    results = []
+    successful_count = 0
+    failed_count = 0
+    
+    for index, alumni_item in enumerate(bulk_data.items):
+        try:
+            # Generate user_id based on user_type
+            user_type = UserType.USER
+            last_user = session.exec(
+                select(User).where(User.user_type == user_type).order_by(User.user_id.desc())
+            ).first()
+            
+            # Auto increment user_id
+            if last_user:
+                last_num = int(last_user.user_id.split("-")[1])
+                new_num = last_num + 1
+            else:
+                new_num = 1
+            
+            user_id = f"USER-{new_num:06d}"
+            
+            # Generate alumni_id
+            last_alumni = session.exec(
+                select(Alumni).order_by(Alumni.alumni_id.desc())
+            ).first()
+            
+            # Auto increment alumni_id
+            if last_alumni and last_alumni.alumni_id.startswith("ALMN-"):
+                last_alumni_num = int(last_alumni.alumni_id.split("-")[1])
+                new_alumni_num = last_alumni_num + 1
+            else:
+                new_alumni_num = 1
+            
+            alumni_id = f"ALMN-{new_alumni_num:06d}"
+            
+            # Create User
+            new_user = User(
+                user_id=user_id,
+                username=alumni_item.username,
+                email=alumni_item.email,
+                password=hash_password(alumni_item.password),  # Hash the password
+                user_type=UserType.USER
+            )
+            session.add(new_user)
+            session.flush()
+            session.refresh(new_user)
+            
+            # Create Alumni (linked to User)
+            new_alumni = Alumni(
+                alumni_id=alumni_id,
+                last_name=alumni_item.last_name,
+                first_name=alumni_item.first_name,
+                middle_name=alumni_item.middle_name,
+                gender=alumni_item.gender,
+                age=alumni_item.age,
+                user_code=new_user.user_code
+            )
+            session.add(new_alumni)
+            session.flush()
+            session.refresh(new_alumni)
+            
+            # Record successful registration
+            results.append(BulkAlumniRegistrationResult(
+                index=index,
+                item=BulkAlumniRegistrationItemSafeDisplay(
+                    username=alumni_item.username,
+                    email=alumni_item.email,
+                    last_name=alumni_item.last_name,
+                    first_name=alumni_item.first_name,
+                    middle_name=alumni_item.middle_name,
+                    gender=alumni_item.gender,
+                    age=alumni_item.age
+                ),
+                success=True,
+                code=SuccessCode.ALUMNI_CREATED.value,
+                message="Alumni profile created successfully",
+                user_id=user_id,
+                alumni_id=alumni_id
+            ))
+            successful_count += 1
+        
+        except IntegrityError as e:
+            session.rollback()
+            error_str = str(e).lower()
+            
+            if "ix_users_email" in error_str or "users_email_key" in error_str:
+                error_code = ErrorCode.DUPLICATE_EMAIL.value
+                error_msg = f"Email '{alumni_item.email}' already in use"
+            elif "ix_users_username" in error_str or "users_username_key" in error_str:
+                error_code = ErrorCode.DUPLICATE_USERNAME.value
+                error_msg = f"Username '{alumni_item.username}' already in use"
+            else:
+                error_code = ErrorCode.REGISTRATION_FAILED.value
+                error_msg = "Alumni registration failed due to constraint violation"
+            
+            results.append(BulkAlumniRegistrationResult(
+                index=index,
+                item=BulkAlumniRegistrationItemSafeDisplay(
+                    username=alumni_item.username,
+                    email=alumni_item.email,
+                    last_name=alumni_item.last_name,
+                    first_name=alumni_item.first_name,
+                    middle_name=alumni_item.middle_name,
+                    gender=alumni_item.gender,
+                    age=alumni_item.age
+                ),
+                success=False,
+                code=error_code,
+                message=error_msg,
+                user_id=None,
+                alumni_id=None
+            ))
+            failed_count += 1
+        
+        except ValueError as e:
+            error_msg = str(e)
+            error_code = ErrorCode.INVALID_INPUT.value
+            
+            results.append(BulkAlumniRegistrationResult(
+                index=index,
+                item=BulkAlumniRegistrationItemSafeDisplay(
+                    username=alumni_item.username,
+                    email=alumni_item.email,
+                    last_name=alumni_item.last_name,
+                    first_name=alumni_item.first_name,
+                    middle_name=alumni_item.middle_name,
+                    gender=alumni_item.gender,
+                    age=alumni_item.age
+                ),
+                success=False,
+                code=error_code,
+                message=error_msg,
+                user_id=None,
+                alumni_id=None
+            ))
+            failed_count += 1
+    
+    # Commit all successful operations
+    try:
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.REGISTRATION_FAILED.value,
+                message="Bulk registration operation failed during commit"
+            ).model_dump(mode='json')
+        )
+    
+    bulk_response = BulkAlumniRegisterResponse(
+        total_items=len(bulk_data.items),
+        successful=successful_count,
+        failed=failed_count,
+        results=results
+    )
+    
+    return StandardResponse(
+        success=failed_count == 0,
+        code=SuccessCode.ALUMNI_BULK_REGISTERED.value,
+        message=f"Bulk registration completed: {successful_count} successful, {failed_count} failed",
+        data=bulk_response
+    )
 
 
 @router.get("")
@@ -341,6 +519,158 @@ def get_alumni(alumni_id: str, session: Session = Depends(get_session)):
     )
 
 
+@router.put("/bulk")
+def bulk_update_alumni(
+    bulk_data: BulkAlumniUpdate,
+    session: Session = Depends(get_session)
+):
+    """Bulk update alumni records"""
+    results = []
+    successful_count = 0
+    failed_count = 0
+    
+    for index, update_item in enumerate(bulk_data.items):
+        try:
+            # Find the alumni
+            alumni = session.exec(
+                select(Alumni).where(Alumni.alumni_id == update_item.alumni_id.upper())
+            ).first()
+            
+            if not alumni:
+                results.append(BulkAlumniUpdateResult(
+                    index=index,
+                    alumni_id=update_item.alumni_id,
+                    success=False,
+                    code=ErrorCode.ALUMNI_NOT_FOUND.value,
+                    message=f"Alumni {update_item.alumni_id} not found",
+                    data=None
+                ))
+                failed_count += 1
+                continue
+            
+            # Update only provided fields
+            if update_item.last_name is not None:
+                alumni.last_name = update_item.last_name
+            if update_item.first_name is not None:
+                alumni.first_name = update_item.first_name
+            if update_item.middle_name is not None:
+                alumni.middle_name = update_item.middle_name
+            if update_item.gender is not None:
+                alumni.gender = update_item.gender.upper()
+            if update_item.age is not None:
+                alumni.age = update_item.age
+            
+            session.add(alumni)
+            session.flush()
+            session.refresh(alumni)
+            
+            # Fetch full profile for response
+            student = None
+            course = None
+            if alumni.student_code:
+                student = session.exec(
+                    select(StudentRecord).where(StudentRecord.student_code == alumni.student_code)
+                ).first()
+                
+                if student:
+                    course = session.exec(
+                        select(Course).where(Course.course_code == student.course_code)
+                    ).first()
+            
+            user = None
+            if alumni.user_code:
+                user = session.exec(
+                    select(User).where(User.user_code == alumni.user_code)
+                ).first()
+            
+            profile = AlumniFullProfile(
+                alumni_id=alumni.alumni_id,
+                last_name=alumni.last_name,
+                first_name=alumni.first_name,
+                middle_name=alumni.middle_name,
+                gender=alumni.gender,
+                age=alumni.age,
+                user_id=user.user_id if user else None,
+                username=user.username if user else None,
+                email=user.email if user else None,
+                student_id=student.student_id if student else None,
+                year_graduated=student.year_graduated if student else None,
+                gwa=student.gwa if student else None,
+                avg_prof_grade=student.avg_prof_grade if student else None,
+                avg_elec_grade=student.avg_elec_grade if student else None,
+                ojt_grade=student.ojt_grade if student else None,
+                leadership_pos=student.leadership_pos if student else None,
+                act_member_pos=student.act_member_pos if student else None,
+                course_id=course.course_id if course else None,
+                course_name=course.course_name if course else None,
+                created_at=alumni.created_at,
+                updated_at=alumni.updated_at
+            )
+            
+            # Record successful update
+            results.append(BulkAlumniUpdateResult(
+                index=index,
+                alumni_id=update_item.alumni_id,
+                success=True,
+                code=SuccessCode.ALUMNI_UPDATED.value,
+                message="Alumni updated successfully",
+                data=profile.model_dump() if profile else None
+            ))
+            successful_count += 1
+        
+        except IntegrityError as e:
+            session.rollback()
+            results.append(BulkAlumniUpdateResult(
+                index=index,
+                alumni_id=update_item.alumni_id,
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Alumni update failed due to constraint violation",
+                data=None
+            ))
+            failed_count += 1
+        
+        except ValueError as e:
+            error_msg = str(e)
+            results.append(BulkAlumniUpdateResult(
+                index=index,
+                alumni_id=update_item.alumni_id,
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message=error_msg,
+                data=None
+            ))
+            failed_count += 1
+    
+    # Commit all successful operations
+    try:
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Bulk update operation failed during commit"
+            ).model_dump(mode='json')
+        )
+    
+    bulk_response = BulkAlumniUpdateResponse(
+        total_items=len(bulk_data.items),
+        successful=successful_count,
+        failed=failed_count,
+        results=results
+    )
+    
+    return StandardResponse(
+        success=failed_count == 0,
+        code=SuccessCode.ALUMNI_BULK_UPDATED.value,
+        message=f"Bulk update completed: {successful_count} successful, {failed_count} failed",
+        data=bulk_response
+    )
+
+
 @router.put("/{alumni_id}")
 def update_alumni(
     alumni_id: str,
@@ -440,6 +770,98 @@ def update_alumni(
         code=SuccessCode.ALUMNI_UPDATED.value,
         message=f"Alumni {alumni_id} updated successfully",
         data=profile
+    )
+
+
+@router.delete("/bulk")
+def bulk_delete_alumni(
+    bulk_data: BulkAlumniDelete,
+    session: Session = Depends(get_session)
+):
+    """Bulk delete alumni records"""
+    results = []
+    successful_count = 0
+    failed_count = 0
+    
+    for index, alumni_id in enumerate(bulk_data.ids):
+        try:
+            # Find the alumni
+            alumni = session.exec(
+                select(Alumni).where(Alumni.alumni_id == alumni_id.upper())
+            ).first()
+            
+            if not alumni:
+                results.append(BulkAlumniDeleteResult(
+                    index=index,
+                    alumni_id=alumni_id,
+                    success=False,
+                    code=ErrorCode.ALUMNI_NOT_FOUND.value,
+                    message=f"Alumni {alumni_id} not found"
+                ))
+                failed_count += 1
+                continue
+            
+            session.delete(alumni)
+            session.flush()
+            
+            # Record successful deletion
+            results.append(BulkAlumniDeleteResult(
+                index=index,
+                alumni_id=alumni_id,
+                success=True,
+                code=SuccessCode.ALUMNI_DELETED.value,
+                message="Alumni deleted successfully"
+            ))
+            successful_count += 1
+        
+        except IntegrityError as e:
+            session.rollback()
+            results.append(BulkAlumniDeleteResult(
+                index=index,
+                alumni_id=alumni_id,
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Alumni deletion failed due to constraint violation"
+            ))
+            failed_count += 1
+        
+        except ValueError as e:
+            error_msg = str(e)
+            results.append(BulkAlumniDeleteResult(
+                index=index,
+                alumni_id=alumni_id,
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message=error_msg
+            ))
+            failed_count += 1
+    
+    # Commit all successful operations
+    try:
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Bulk delete operation failed during commit"
+            ).model_dump(mode='json')
+        )
+    
+    bulk_response = BulkAlumniDeleteResponse(
+        total_items=len(bulk_data.ids),
+        successful=successful_count,
+        failed=failed_count,
+        results=results
+    )
+    
+    return StandardResponse(
+        success=failed_count == 0,
+        code=SuccessCode.ALUMNI_BULK_DELETED.value,
+        message=f"Bulk delete completed: {successful_count} successful, {failed_count} failed",
+        data=bulk_response
     )
 
 
