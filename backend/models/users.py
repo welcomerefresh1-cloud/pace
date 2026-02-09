@@ -1,10 +1,10 @@
 import uuid
 import re
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, List
 from enum import Enum
 from sqlmodel import SQLModel, Field
-from pydantic import field_serializer, field_validator
+from pydantic import field_serializer, field_validator, BaseModel
 from utils.timezone import get_current_time_gmt8, GMT8
 from utils.auth import hash_password
 
@@ -124,3 +124,128 @@ class SuccessResponse(SQLModel):
 class UserLogin(SQLModel):
     username: str
     password: str
+
+
+# Bulk operation models
+
+# Safe display models (exclude passwords from responses)
+class UserCreateSafeDisplay(BaseModel):
+    """User creation data for response (no password included)"""
+    username: str
+    email: str
+    user_type: str
+
+
+class UserUpdateSafeDisplay(BaseModel):
+    """User update data for response (no passwords included)"""
+    user_id: str
+    username: Optional[str] = None
+    email: Optional[str] = None
+
+
+class UserBulkCreateItem(BaseModel):
+    """Individual item result from bulk create operation"""
+    index: int = Field(..., description="Index in the request list (0-based)")
+    item: UserCreateSafeDisplay = Field(..., description="The user data submitted (password excluded)")
+    success: bool = Field(..., description="Whether this item was created successfully")
+    code: str = Field(..., description="Error code (if failed) or success code")
+    message: str = Field(..., description="Detailed message about the result")
+    data: Optional[UserPublic] = Field(default=None, description="Created user (if successful)")
+
+
+
+class UserBulkCreate(BaseModel):
+    """Bulk create request for users"""
+    items: List[UserCreate] = Field(..., min_items=1, max_items=100, description="List of users to create (1-100 items)")
+
+
+class UserBulkCreateResponse(BaseModel):
+    """Bulk create response for users"""
+    total_items: int = Field(..., description="Total items in request")
+    successful: int = Field(..., description="Number of items successfully created")
+    failed: int = Field(..., description="Number of items that failed")
+    results: List[UserBulkCreateItem] = Field(..., description="Detailed results for each item")
+
+
+# Bulk update models
+class UserBulkUpdateItem(BaseModel):
+    """User update item in bulk request"""
+    user_id: str = Field(..., description="User ID to update")
+    username: Optional[str] = Field(default=None, max_length=50, description="New username")
+    email: Optional[str] = Field(default=None, max_length=100, description="New email")
+    current_password: Optional[str] = Field(default=None, min_length=8, max_length=72, description="Current password (required for password change)")
+    password: Optional[str] = Field(default=None, min_length=8, max_length=72, description="New password")
+    
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, v):
+        """Validate email format if provided"""
+        if v is not None:
+            email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+            if not re.match(email_pattern, v):
+                raise ValueError('Invalid email format')
+            return v.lower()
+        return v
+    
+    @field_validator('password')
+    @classmethod
+    def validate_password_strength(cls, v):
+        """Validate password strength if provided, then hash"""
+        if v is not None:
+            if len(v) < 8:
+                raise ValueError('Password must be at least 8 characters long')
+            if not re.search(r'[A-Z]', v):
+                raise ValueError('Password must contain at least one uppercase letter')
+            if not re.search(r'[a-z]', v):
+                raise ValueError('Password must contain at least one lowercase letter')
+            if not re.search(r'\d', v):
+                raise ValueError('Password must contain at least one number')
+            return hash_password(v)  # Hash after validation passes
+        return v
+
+
+class UserBulkUpdateResult(BaseModel):
+    """Individual item result from bulk update operation"""
+    index: int = Field(..., description="Index in the request list (0-based)")
+    item: UserUpdateSafeDisplay = Field(..., description="The user data submitted (passwords excluded)")
+    success: bool = Field(..., description="Whether this item was updated successfully")
+    code: str = Field(..., description="Error code (if failed) or success code")
+    message: str = Field(..., description="Detailed message about the result")
+    data: Optional[UserPublic] = Field(default=None, description="Updated user (if successful)")
+
+
+class UserBulkUpdate(BaseModel):
+    """Bulk update request for users"""
+    items: List[UserBulkUpdateItem] = Field(..., min_items=1, max_items=100, description="List of users to update (1-100 items)")
+
+
+class UserBulkUpdateResponse(BaseModel):
+    """Bulk update response for users"""
+    total_items: int = Field(..., description="Total items in request")
+    successful: int = Field(..., description="Number of items successfully updated")
+    failed: int = Field(..., description="Number of items that failed")
+    results: List[UserBulkUpdateResult] = Field(..., description="Detailed results for each item")
+
+
+# Bulk delete models
+class UserBulkDeleteResult(BaseModel):
+    """Individual item result from bulk delete operation"""
+    index: int = Field(..., description="Index in the request list (0-based)")
+    user_id: str = Field(..., description="User ID that was deleted")
+    success: bool = Field(..., description="Whether this item was deleted successfully")
+    code: str = Field(..., description="Error code (if failed) or success code")
+    message: str = Field(..., description="Detailed message about the result")
+
+
+class UserBulkDelete(BaseModel):
+    """Bulk delete request for users"""
+    ids: List[str] = Field(..., min_items=1, max_items=100, description="List of user IDs to delete (1-100 items)")
+
+
+class UserBulkDeleteResponse(BaseModel):
+    """Bulk delete response for users"""
+    total_items: int = Field(..., description="Total items in request")
+    successful: int = Field(..., description="Number of items successfully deleted")
+    failed: int = Field(..., description="Number of items that failed")
+    results: List[UserBulkDeleteResult] = Field(..., description="Detailed results for each item")
+

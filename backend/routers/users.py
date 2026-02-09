@@ -2,7 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select, func
 from sqlalchemy.exc import IntegrityError
 from core.database import get_session
-from models.users import User, UserCreate, UserUpdate, UserPublic, UserType, SuccessResponse
+from models.users import (
+    User, UserCreate, UserUpdate, UserPublic, UserType, SuccessResponse,
+    UserBulkCreate, UserBulkCreateItem, UserBulkCreateResponse, UserCreateSafeDisplay,
+    UserBulkUpdate, UserBulkUpdateItem, UserBulkUpdateResult, UserBulkUpdateResponse, UserUpdateSafeDisplay,
+    UserBulkDelete, UserBulkDeleteResult, UserBulkDeleteResponse
+)
 from models.response_codes import ErrorCode, SuccessCode, StandardResponse
 from models.pagination import PaginatedResponse, PaginationMetadata
 from utils.auth import verify_password
@@ -96,6 +101,120 @@ def create_user(
             )
 
 
+@router.post("/bulk")
+def bulk_create_users(
+    bulk_data: UserBulkCreate,
+    session: Session = Depends(get_session)
+):
+    """Bulk create users"""
+    results = []
+    successful_count = 0
+    failed_count = 0
+    
+    for index, user_item in enumerate(bulk_data.items):
+        try:
+            # Generate user_id based on user_type
+            user_id = generate_user_id(user_item.user_type, session)
+            
+            # Create user
+            user_dict = user_item.model_dump()
+            user_dict["user_id"] = user_id
+            
+            new_user = User.model_validate(user_dict)
+            session.add(new_user)
+            session.flush()  # Flush to get the ID but don't commit yet
+            session.refresh(new_user)
+            
+            # Record successful creation
+            results.append(UserBulkCreateItem(
+                index=index,
+                item=UserCreateSafeDisplay(
+                    username=user_item.username,
+                    email=user_item.email,
+                    user_type=user_item.user_type
+                ),
+                success=True,
+                code=SuccessCode.USER_CREATED.value,
+                message="User created successfully",
+                data=UserPublic.model_validate(new_user)
+            ))
+            successful_count += 1
+        
+        except IntegrityError as e:
+            session.rollback()
+            error_str = str(e).lower()
+            
+            if "ix_users_email" in error_str or "users_email_key" in error_str:
+                error_code = ErrorCode.DUPLICATE_EMAIL.value
+                error_msg = f"Email '{user_item.email}' already exists"
+            elif "ix_users_username" in error_str or "users_username_key" in error_str:
+                error_code = ErrorCode.DUPLICATE_USERNAME.value
+                error_msg = f"Username '{user_item.username}' already exists"
+            else:
+                error_code = ErrorCode.INVALID_INPUT.value
+                error_msg = "User creation failed due to constraint violation"
+            
+            results.append(UserBulkCreateItem(
+                index=index,
+                item=UserCreateSafeDisplay(
+                    username=user_item.username,
+                    email=user_item.email,
+                    user_type=user_item.user_type
+                ),
+                success=False,
+                code=error_code,
+                message=error_msg,
+                data=None
+            ))
+            failed_count += 1
+        
+        except ValueError as e:
+            error_msg = str(e)
+            error_code = ErrorCode.INVALID_INPUT.value
+            
+            results.append(UserBulkCreateItem(
+                index=index,
+                item=UserCreateSafeDisplay(
+                    username=user_item.username,
+                    email=user_item.email,
+                    user_type=user_item.user_type
+                ),
+                success=False,
+                code=error_code,
+                message=error_msg,
+                data=None
+            ))
+            failed_count += 1
+    
+    # Commit all successful operations
+    try:
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Bulk create operation failed during commit"
+            ).model_dump(mode='json')
+        )
+    
+    bulk_response = UserBulkCreateResponse(
+        total_items=len(bulk_data.items),
+        successful=successful_count,
+        failed=failed_count,
+        results=results
+    )
+    
+    return StandardResponse(
+        success=failed_count == 0,  # True only if all succeeded
+        code=SuccessCode.USERS_BULK_CREATED.value,
+        message=f"Bulk create completed: {successful_count} successful, {failed_count} failed",
+        data=bulk_response
+    )
+
+
 @router.get("")
 def get_all_users(
     limit: int = Query(10, ge=0, description="Records per page (0 = all records)"),
@@ -186,6 +305,177 @@ def get_user(user_id: str, session: Session = Depends(get_session)):
         code=SuccessCode.USER_RETRIEVED.value,
         message=f"User {user_id} retrieved successfully",
         data=UserPublic.model_validate(user)
+    )
+
+
+@router.put("/bulk")
+def bulk_update_users(
+    bulk_data: UserBulkUpdate,
+    session: Session = Depends(get_session)
+):
+    """Bulk update users"""
+    results = []
+    successful_count = 0
+    failed_count = 0
+    
+    for index, update_item in enumerate(bulk_data.items):
+        try:
+            # Find the user
+            user = session.exec(
+                select(User).where(User.user_id == update_item.user_id.upper())
+            ).first()
+            
+            if not user:
+                results.append(UserBulkUpdateResult(
+                    index=index,
+                    item=UserUpdateSafeDisplay(
+                        user_id=update_item.user_id,
+                        username=update_item.username,
+                        email=update_item.email
+                    ),
+                    success=False,
+                    code=ErrorCode.USER_NOT_FOUND.value,
+                    message=f"User {update_item.user_id} not found",
+                    data=None
+                ))
+                failed_count += 1
+                continue
+            
+            # If password change is requested, verify current password
+            if update_item.password is not None:
+                if update_item.current_password is None:
+                    results.append(UserBulkUpdateResult(
+                        index=index,
+                        item=UserUpdateSafeDisplay(
+                            user_id=update_item.user_id,
+                            username=update_item.username,
+                            email=update_item.email
+                        ),
+                        success=False,
+                        code=ErrorCode.MISSING_CURRENT_PASSWORD.value,
+                        message="Current password required to change password",
+                        data=None
+                    ))
+                    failed_count += 1
+                    continue
+                
+                # Verify the current password
+                if not verify_password(update_item.current_password, user.password):
+                    results.append(UserBulkUpdateResult(
+                        index=index,
+                        item=UserUpdateSafeDisplay(
+                            user_id=update_item.user_id,
+                            username=update_item.username,
+                            email=update_item.email
+                        ),
+                        success=False,
+                        code=ErrorCode.INVALID_CREDENTIALS.value,
+                        message="Current password is incorrect",
+                        data=None
+                    ))
+                    failed_count += 1
+                    continue
+            
+            # Update only provided fields
+            if update_item.username is not None:
+                user.username = update_item.username
+            if update_item.email is not None:
+                user.email = update_item.email
+            if update_item.password is not None:
+                # Password is already hashed by validator in UserBulkUpdateItem
+                user.password = update_item.password
+            
+            session.add(user)
+            session.flush()
+            session.refresh(user)
+            
+            # Record successful update
+            results.append(UserBulkUpdateResult(
+                index=index,
+                item=UserUpdateSafeDisplay(
+                    user_id=update_item.user_id,
+                    username=update_item.username,
+                    email=update_item.email
+                ),
+                success=True,
+                code=SuccessCode.USER_UPDATED.value,
+                message="User updated successfully",
+                data=UserPublic.model_validate(user)
+            ))
+            successful_count += 1
+        
+        except IntegrityError as e:
+            session.rollback()
+            error_str = str(e).lower()
+            
+            if "ix_users_email" in error_str or "users_email_key" in error_str:
+                error_code = ErrorCode.DUPLICATE_EMAIL.value
+                error_msg = f"Email already exists"
+            elif "ix_users_username" in error_str or "users_username_key" in error_str:
+                error_code = ErrorCode.DUPLICATE_USERNAME.value
+                error_msg = f"Username already exists"
+            else:
+                error_code = ErrorCode.INVALID_INPUT.value
+                error_msg = "User update failed due to constraint violation"
+            
+            results.append(UserBulkUpdateResult(
+                index=index,
+                item=UserUpdateSafeDisplay(
+                    user_id=update_item.user_id,
+                    username=update_item.username,
+                    email=update_item.email
+                ),
+                success=False,
+                code=error_code,
+                message=error_msg,
+                data=None
+            ))
+            failed_count += 1
+        
+        except ValueError as e:
+            error_msg = str(e)
+            error_code = ErrorCode.INVALID_INPUT.value
+            
+            results.append(UserBulkUpdateResult(
+                index=index,
+                item=UserUpdateSafeDisplay(
+                    user_id=update_item.user_id,
+                    username=update_item.username,
+                    email=update_item.email
+                ),
+                success=False,
+                code=error_code,
+                message=error_msg,
+                data=None
+            ))
+            failed_count += 1
+    
+    # Commit all successful operations
+    try:
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Bulk update operation failed during commit"
+            ).model_dump(mode='json')
+        )
+    
+    bulk_response = UserBulkUpdateResponse(
+        total_items=len(bulk_data.items),
+        successful=successful_count,
+        failed=failed_count,
+        results=results
+    )
+    
+    return StandardResponse(
+        success=failed_count == 0,
+        code=SuccessCode.USERS_BULK_UPDATED.value,
+        message=f"Bulk update completed: {successful_count} successful, {failed_count} failed",
+        data=bulk_response
     )
 
 
@@ -292,6 +582,98 @@ def update_user(
             )
 
 
+@router.delete("/bulk")
+def bulk_delete_users(
+    bulk_data: UserBulkDelete,
+    session: Session = Depends(get_session)
+):
+    """Bulk delete users"""
+    results = []
+    successful_count = 0
+    failed_count = 0
+    
+    for index, user_id in enumerate(bulk_data.ids):
+        try:
+            # Find the user
+            user = session.exec(
+                select(User).where(User.user_id == user_id.upper())
+            ).first()
+            
+            if not user:
+                results.append(UserBulkDeleteResult(
+                    index=index,
+                    user_id=user_id,
+                    success=False,
+                    code=ErrorCode.USER_NOT_FOUND.value,
+                    message=f"User {user_id} not found"
+                ))
+                failed_count += 1
+                continue
+            
+            session.delete(user)
+            session.flush()
+            
+            # Record successful deletion
+            results.append(UserBulkDeleteResult(
+                index=index,
+                user_id=user_id,
+                success=True,
+                code=SuccessCode.USER_DELETED.value,
+                message="User deleted successfully"
+            ))
+            successful_count += 1
+        
+        except IntegrityError as e:
+            session.rollback()
+            results.append(UserBulkDeleteResult(
+                index=index,
+                user_id=user_id,
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="User deletion failed due to constraint violation"
+            ))
+            failed_count += 1
+        
+        except ValueError as e:
+            error_msg = str(e)
+            results.append(UserBulkDeleteResult(
+                index=index,
+                user_id=user_id,
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message=error_msg
+            ))
+            failed_count += 1
+    
+    # Commit all successful operations
+    try:
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Bulk delete operation failed during commit"
+            ).model_dump(mode='json')
+        )
+    
+    bulk_response = UserBulkDeleteResponse(
+        total_items=len(bulk_data.ids),
+        successful=successful_count,
+        failed=failed_count,
+        results=results
+    )
+    
+    return StandardResponse(
+        success=failed_count == 0,
+        code=SuccessCode.USERS_BULK_DELETED.value,
+        message=f"Bulk delete completed: {successful_count} successful, {failed_count} failed",
+        data=bulk_response
+    )
+
+
 @router.delete("/{user_id}")
 def delete_user(
     user_id: str,
@@ -345,3 +727,4 @@ def delete_user(
                 message="Delete failed: Constraint violation or invalid operation"
             ).model_dump(mode='json')
         )
+
