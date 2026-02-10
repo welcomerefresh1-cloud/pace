@@ -699,56 +699,6 @@ def delete_college_dept(college_dept_id: str, session: Session = Depends(get_ses
         )
 
 
-@router.post("/{college_dept_id}/restore")
-def restore_college_dept(college_dept_id: str, session: Session = Depends(get_session)):
-    """Restore a soft-deleted college department"""
-    college_dept = session.exec(
-        select(CollegeDept).where(CollegeDept.college_dept_id == college_dept_id.upper())
-    ).first()
-    
-    if not college_dept:
-        log_error("college_depts", "restore_college_dept", ErrorCode.COLLEGE_DEPT_NOT_FOUND.value, f"College department {college_dept_id} not found")
-        raise HTTPException(
-            status_code=404,
-            detail=StandardResponse(
-                success=False,
-                code=ErrorCode.COLLEGE_DEPT_NOT_FOUND.value,
-                message="College department not found"
-            ).model_dump(mode='json')
-        )
-    
-    if not college_dept.is_deleted:
-        raise HTTPException(
-            status_code=400,
-            detail=StandardResponse(
-                success=False,
-                code=ErrorCode.INVALID_INPUT.value,
-                message="College department is not deleted, cannot restore"
-            ).model_dump(mode='json')
-        )
-    
-    try:
-        # Restore soft-deleted college department
-        college_dept.is_deleted = False
-        college_dept.deleted_at = None
-        session.add(college_dept)
-        session.commit()
-        return StandardResponse(
-            success=True,
-            code=SuccessCode.COLLEGE_DEPT_RESTORED.value,
-            message=f"College department {college_dept_id} restored successfully"
-        )
-    except IntegrityError as e:
-        session.rollback()
-        log_integrity_error("college_depts", "restore_college_dept", ErrorCode.INVALID_INPUT.value, "Restore failed", str(e))
-        raise HTTPException(
-            status_code=400,
-            detail=StandardResponse(
-                success=False,
-                code=ErrorCode.INVALID_INPUT.value,
-                message="Restore failed: Constraint violation or invalid operation"
-            ).model_dump(mode='json')
-        )
 
 
 @router.post("/bulk/restore")
@@ -821,7 +771,7 @@ def bulk_restore_college_depts(
     
     session.commit()
     return StandardResponse(
-        success=len(results) > 0,
+        success=failed_count == 0,
         code=SuccessCode.COLLEGE_DEPTS_BULK_RESTORED.value,
         message=f"Restore operation completed: {successful_count} succeeded, {failed_count} failed",
         data=CollegeDeptBulkRestoreResponse(
@@ -831,6 +781,58 @@ def bulk_restore_college_depts(
             results=results
         )
     )
+
+
+@router.post("/{college_dept_id}/restore")
+def restore_college_dept(college_dept_id: str, session: Session = Depends(get_session)):
+    """Restore a soft-deleted college department"""
+    college_dept = session.exec(
+        select(CollegeDept).where(CollegeDept.college_dept_id == college_dept_id.upper())
+    ).first()
+    
+    if not college_dept:
+        log_error("college_depts", "restore_college_dept", ErrorCode.COLLEGE_DEPT_NOT_FOUND.value, f"College department {college_dept_id} not found")
+        raise HTTPException(
+            status_code=404,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.COLLEGE_DEPT_NOT_FOUND.value,
+                message="College department not found"
+            ).model_dump(mode='json')
+        )
+    
+    if not college_dept.is_deleted:
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="College department is not deleted, cannot restore"
+            ).model_dump(mode='json')
+        )
+    
+    try:
+        # Restore soft-deleted college department
+        college_dept.is_deleted = False
+        college_dept.deleted_at = None
+        session.add(college_dept)
+        session.commit()
+        return StandardResponse(
+            success=True,
+            code=SuccessCode.COLLEGE_DEPT_RESTORED.value,
+            message=f"College department {college_dept_id} restored successfully"
+        )
+    except IntegrityError as e:
+        session.rollback()
+        log_integrity_error("college_depts", "restore_college_dept", ErrorCode.INVALID_INPUT.value, "Restore failed", str(e))
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Restore failed: Constraint violation or invalid operation"
+            ).model_dump(mode='json')
+        )
 
 
 @router.get("/deleted/list")

@@ -839,58 +839,6 @@ def delete_course(course_id: str, session: Session = Depends(get_session)):
         )
 
 
-@router.post("/{course_id}/restore")
-def restore_course(course_id: str, session: Session = Depends(get_session)):
-    """Restore a soft-deleted course"""
-    course = session.exec(
-        select(Course).where(Course.course_id == course_id.upper())
-    ).first()
-    
-    if not course:
-        log_error("courses", "restore_course", ErrorCode.COURSE_NOT_FOUND.value, f"Course {course_id} not found")
-        raise HTTPException(
-            status_code=404,
-            detail=StandardResponse(
-                success=False,
-                code=ErrorCode.COURSE_NOT_FOUND.value,
-                message="Course not found"
-            ).model_dump(mode='json')
-        )
-    
-    if not course.is_deleted:
-        raise HTTPException(
-            status_code=400,
-            detail=StandardResponse(
-                success=False,
-                code=ErrorCode.INVALID_INPUT.value,
-                message="Course is not deleted, cannot restore"
-            ).model_dump(mode='json')
-        )
-    
-    try:
-        # Restore soft-deleted course
-        course.is_deleted = False
-        course.deleted_at = None
-        session.add(course)
-        session.commit()
-        return StandardResponse(
-            success=True,
-            code=SuccessCode.COURSE_RESTORED.value,
-            message=f"Course {course_id} restored successfully"
-        )
-    except IntegrityError as e:
-        session.rollback()
-        log_integrity_error("courses", "restore_course", ErrorCode.INVALID_INPUT.value, "Restore failed", str(e))
-        raise HTTPException(
-            status_code=400,
-            detail=StandardResponse(
-                success=False,
-                code=ErrorCode.INVALID_INPUT.value,
-                message="Restore failed: Constraint violation or invalid operation"
-            ).model_dump(mode='json')
-        )
-
-
 @router.post("/bulk/restore")
 def bulk_restore_courses(
     data: CourseBulkRestore,
@@ -961,7 +909,7 @@ def bulk_restore_courses(
     
     session.commit()
     return StandardResponse(
-        success=len(results) > 0,
+        success=failed_count == 0,
         code=SuccessCode.COURSES_BULK_RESTORED.value,
         message=f"Restore operation completed: {successful_count} succeeded, {failed_count} failed",
         data=CourseBulkRestoreResponse(
@@ -971,6 +919,58 @@ def bulk_restore_courses(
             results=results
         )
     )
+
+
+@router.post("/{course_id}/restore")
+def restore_course(course_id: str, session: Session = Depends(get_session)):
+    """Restore a soft-deleted course"""
+    course = session.exec(
+        select(Course).where(Course.course_id == course_id.upper())
+    ).first()
+    
+    if not course:
+        log_error("courses", "restore_course", ErrorCode.COURSE_NOT_FOUND.value, f"Course {course_id} not found")
+        raise HTTPException(
+            status_code=404,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.COURSE_NOT_FOUND.value,
+                message="Course not found"
+            ).model_dump(mode='json')
+        )
+    
+    if not course.is_deleted:
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Course is not deleted, cannot restore"
+            ).model_dump(mode='json')
+        )
+    
+    try:
+        # Restore soft-deleted course
+        course.is_deleted = False
+        course.deleted_at = None
+        session.add(course)
+        session.commit()
+        return StandardResponse(
+            success=True,
+            code=SuccessCode.COURSE_RESTORED.value,
+            message=f"Course {course_id} restored successfully"
+        )
+    except IntegrityError as e:
+        session.rollback()
+        log_integrity_error("courses", "restore_course", ErrorCode.INVALID_INPUT.value, "Restore failed", str(e))
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Restore failed: Constraint violation or invalid operation"
+            ).model_dump(mode='json')
+        )
 
 
 @router.get("/deleted/list")

@@ -801,56 +801,6 @@ def delete_user(
         )
 
 
-@router.post("/{user_id}/restore")
-def restore_user(user_id: str, session: Session = Depends(get_session)):
-    """Restore a soft-deleted user"""
-    user = session.exec(
-        select(User).where(User.user_id == user_id.upper())
-    ).first()
-    
-    if not user:
-        log_error("users", "restore_user", ErrorCode.USER_NOT_FOUND.value, f"User {user_id} not found")
-        raise HTTPException(
-            status_code=404,
-            detail=StandardResponse(
-                success=False,
-                code=ErrorCode.USER_NOT_FOUND.value,
-                message="User not found"
-            ).model_dump(mode='json')
-        )
-    
-    if not user.is_deleted:
-        raise HTTPException(
-            status_code=400,
-            detail=StandardResponse(
-                success=False,
-                code=ErrorCode.INVALID_INPUT.value,
-                message="User is not deleted, cannot restore"
-            ).model_dump(mode='json')
-        )
-    
-    try:
-        # Restore soft-deleted user
-        user.is_deleted = False
-        user.deleted_at = None
-        session.add(user)
-        session.commit()
-        return StandardResponse(
-            success=True,
-            code=SuccessCode.USER_RESTORED.value,
-            message=f"User {user_id} restored successfully"
-        )
-    except IntegrityError as e:
-        session.rollback()
-        log_integrity_error("users", "restore_user", ErrorCode.INVALID_INPUT.value, "Restore failed", str(e))
-        raise HTTPException(
-            status_code=400,
-            detail=StandardResponse(
-                success=False,
-                code=ErrorCode.INVALID_INPUT.value,
-                message="Restore failed: Constraint violation or invalid operation"
-            ).model_dump(mode='json')
-        )
 
 
 @router.post("/bulk/restore")
@@ -923,7 +873,7 @@ def bulk_restore_users(
     
     session.commit()
     return StandardResponse(
-        success=len(results) > 0,
+        success=failed_count == 0,
         code=SuccessCode.USERS_BULK_RESTORED.value,
         message=f"Restore operation completed: {successful_count} succeeded, {failed_count} failed",
         data=UserBulkRestoreResponse(
@@ -933,6 +883,58 @@ def bulk_restore_users(
             results=results
         )
     )
+
+
+@router.post("/{user_id}/restore")
+def restore_user(user_id: str, session: Session = Depends(get_session)):
+    """Restore a soft-deleted user"""
+    user = session.exec(
+        select(User).where(User.user_id == user_id.upper())
+    ).first()
+    
+    if not user:
+        log_error("users", "restore_user", ErrorCode.USER_NOT_FOUND.value, f"User {user_id} not found")
+        raise HTTPException(
+            status_code=404,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.USER_NOT_FOUND.value,
+                message="User not found"
+            ).model_dump(mode='json')
+        )
+    
+    if not user.is_deleted:
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="User is not deleted, cannot restore"
+            ).model_dump(mode='json')
+        )
+    
+    try:
+        # Restore soft-deleted user
+        user.is_deleted = False
+        user.deleted_at = None
+        session.add(user)
+        session.commit()
+        return StandardResponse(
+            success=True,
+            code=SuccessCode.USER_RESTORED.value,
+            message=f"User {user_id} restored successfully"
+        )
+    except IntegrityError as e:
+        session.rollback()
+        log_integrity_error("users", "restore_user", ErrorCode.INVALID_INPUT.value, "Restore failed", str(e))
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Restore failed: Constraint violation or invalid operation"
+            ).model_dump(mode='json')
+        )
 
 
 @router.get("/deleted/list")

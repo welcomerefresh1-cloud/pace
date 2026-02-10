@@ -956,6 +956,97 @@ def delete_alumni(alumni_id: str, session: Session = Depends(get_session)):
         )
 
 
+@router.post("/bulk/restore")
+def bulk_restore_alumni(
+    data: BulkAlumniRestore,
+    session: Session = Depends(get_session)
+):
+    """Restore multiple soft-deleted alumni"""
+    results = []
+    successful_count = 0
+    failed_count = 0
+    
+    for index, alumni_id in enumerate(data.ids):
+        try:
+            alumni = session.exec(
+                select(Alumni).where(Alumni.alumni_id == alumni_id.upper())
+            ).first()
+            
+            if not alumni:
+                results.append(BulkAlumniRestoreResult(
+                    index=index,
+                    alumni_id=alumni_id,
+                    success=False,
+                    code=ErrorCode.ALUMNI_NOT_FOUND.value,
+                    message=f"Alumni '{alumni_id}' not found"
+                ))
+                failed_count += 1
+                continue
+            
+            if not alumni.is_deleted:
+                results.append(BulkAlumniRestoreResult(
+                    index=index,
+                    alumni_id=alumni_id,
+                    success=False,
+                    code=ErrorCode.INVALID_INPUT.value,
+                    message=f"Alumni '{alumni_id}' is not deleted"
+                ))
+                failed_count += 1
+                continue
+            
+            # Cascade restore associated student records
+            student_records = session.exec(
+                select(StudentRecord).where((StudentRecord.alumni_code == alumni.alumni_code) & (StudentRecord.is_deleted == True))
+            ).all()
+            for student in student_records:
+                student.is_deleted = False
+                student.deleted_at = None
+                session.add(student)
+            
+            # Restore alumni
+            alumni.is_deleted = False
+            alumni.deleted_at = None
+            session.add(alumni)
+            session.flush()
+            
+            # Record successful restoration
+            results.append(BulkAlumniRestoreResult(
+                index=index,
+                alumni_id=alumni_id,
+                success=True,
+                code=SuccessCode.ALUMNI_RESTORED.value,
+                message="Alumni restored successfully"
+            ))
+            successful_count += 1
+        
+        except IntegrityError as e:
+            session.rollback()
+            error_code = ErrorCode.INVALID_INPUT.value
+            error_msg = "Restore failed: Constraint violation or related data issue"
+            results.append(BulkAlumniRestoreResult(
+                index=index,
+                alumni_id=alumni_id,
+                success=False,
+                code=error_code,
+                message=error_msg
+            ))
+            log_integrity_error("alumni", "bulk_restore_alumni", error_code, error_msg, str(e))
+            failed_count += 1
+    
+    session.commit()
+    return StandardResponse(
+        success=failed_count == 0,
+        code=SuccessCode.ALUMNI_BULK_RESTORED.value,
+        message=f"Restore operation completed: {successful_count} succeeded, {failed_count} failed",
+        data=BulkAlumniRestoreResponse(
+            total_items=len(data.ids),
+            successful=successful_count,
+            failed=failed_count,
+            results=results
+        )
+    )
+
+
 @router.post("/{alumni_id}/restore")
 def restore_alumni(alumni_id: str, session: Session = Depends(get_session)):
     """Restore a soft-deleted alumni record"""
@@ -1015,97 +1106,6 @@ def restore_alumni(alumni_id: str, session: Session = Depends(get_session)):
                 message="Restore failed: Constraint violation or invalid operation"
             ).model_dump(mode='json')
         )
-
-
-@router.post("/bulk/restore")
-def bulk_restore_alumni(
-    data: BulkAlumniRestore,
-    session: Session = Depends(get_session)
-):
-    """Restore multiple soft-deleted alumni"""
-    results = []
-    successful_count = 0
-    failed_count = 0
-    
-    for index, alumni_id in enumerate(data.ids):
-        try:
-            alumni = session.exec(
-                select(Alumni).where(Alumni.alumni_id == alumni_id.upper())
-            ).first()
-            
-            if not alumni:
-                results.append(BulkAlumniRestoreResult(
-                    index=index,
-                    alumni_id=alumni_id,
-                    success=False,
-                    code=ErrorCode.ALUMNI_NOT_FOUND.value,
-                    message=f"Alumni '{alumni_id}' not found"
-                ))
-                failed_count += 1
-                continue
-            
-            if not alumni.is_deleted:
-                results.append(BulkAlumniRestoreResult(
-                    index=index,
-                    alumni_id=alumni_id,
-                    success=False,
-                    code=ErrorCode.INVALID_INPUT.value,
-                    message=f"Alumni '{alumni_id}' is not deleted"
-                ))
-                failed_count += 1
-                continue
-            
-            # Cascade restore associated student records
-            student_records = session.exec(
-                select(StudentRecord).where((StudentRecord.alumni_code == alumni.alumni_code) & (StudentRecord.is_deleted == True))
-            ).all()
-            for student in student_records:
-                student.is_deleted = False
-                student.deleted_at = None
-                session.add(student)
-            
-            # Restore alumni
-            alumni.is_deleted = False
-            alumni.deleted_at = None
-            session.add(alumni)
-            session.flush()
-            
-            # Record successful restoration
-            results.append(BulkAlumniRestoreResult(
-                index=index,
-                alumni_id=alumni_id,
-                success=True,
-                code=SuccessCode.ALUMNI_RESTORED.value if hasattr(SuccessCode, 'ALUMNI_RESTORED') else "ALUMNI_RESTORED",
-                message="Alumni restored successfully"
-            ))
-            successful_count += 1
-        
-        except IntegrityError as e:
-            session.rollback()
-            error_code = ErrorCode.INVALID_INPUT.value
-            error_msg = "Restore failed: Constraint violation or related data issue"
-            results.append(BulkAlumniRestoreResult(
-                index=index,
-                alumni_id=alumni_id,
-                success=False,
-                code=error_code,
-                message=error_msg
-            ))
-            log_integrity_error("alumni", "bulk_restore_alumni", error_code, error_msg, str(e))
-            failed_count += 1
-    
-    session.commit()
-    return StandardResponse(
-        success=len(results) > 0,
-        code=SuccessCode.ALUMNI_BULK_RESTORED.value,
-        message=f"Restore operation completed: {successful_count} succeeded, {failed_count} failed",
-        data=BulkAlumniRestoreResponse(
-            total_items=len(data.ids),
-            successful=successful_count,
-            failed=failed_count,
-            results=results
-        )
-    )
 
 
 @router.get("/deleted/list")

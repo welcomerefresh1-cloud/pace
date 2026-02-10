@@ -853,58 +853,6 @@ def delete_student_record(student_id: str, session: Session = Depends(get_sessio
         )
 
 
-@router.post("/{student_id}/restore")
-def restore_student_record(student_id: str, session: Session = Depends(get_session)):
-    """Restore a soft-deleted student record"""
-    student = session.exec(
-        select(StudentRecord).where(StudentRecord.student_id == student_id.upper())
-    ).first()
-    
-    if not student:
-        log_error("student_records", "restore_student_record", ErrorCode.STUDENT_RECORD_NOT_FOUND.value, f"Student record {student_id} not found")
-        raise HTTPException(
-            status_code=404,
-            detail=StandardResponse(
-                success=False,
-                code=ErrorCode.STUDENT_RECORD_NOT_FOUND.value,
-                message="Student record not found"
-            ).model_dump(mode='json')
-        )
-    
-    if not student.is_deleted:
-        raise HTTPException(
-            status_code=400,
-            detail=StandardResponse(
-                success=False,
-                code=ErrorCode.INVALID_INPUT.value,
-                message="Student record is not deleted, cannot restore"
-            ).model_dump(mode='json')
-        )
-    
-    try:
-        # Restore soft-deleted student record
-        student.is_deleted = False
-        student.deleted_at = None
-        session.add(student)
-        session.commit()
-        return StandardResponse(
-            success=True,
-            code=SuccessCode.STUDENT_RECORD_RESTORED.value,
-            message=f"Student record {student_id} restored successfully"
-        )
-    except IntegrityError as e:
-        session.rollback()
-        log_integrity_error("student_records", "restore_student_record", ErrorCode.INVALID_INPUT.value, "Restore failed", str(e))
-        raise HTTPException(
-            status_code=400,
-            detail=StandardResponse(
-                success=False,
-                code=ErrorCode.INVALID_INPUT.value,
-                message="Restore failed: Constraint violation or invalid operation"
-            ).model_dump(mode='json')
-        )
-
-
 @router.post("/bulk/restore")
 def bulk_restore_student_records(
     data: StudentRecordBulkRestore,
@@ -975,7 +923,7 @@ def bulk_restore_student_records(
     
     session.commit()
     return StandardResponse(
-        success=len(results) > 0,
+        success=failed_count == 0,
         code=SuccessCode.STUDENT_RECORDS_BULK_RESTORED.value,
         message=f"Restore operation completed: {successful_count} succeeded, {failed_count} failed",
         data=StudentRecordBulkRestoreResponse(
@@ -985,6 +933,58 @@ def bulk_restore_student_records(
             results=results
         )
     )
+
+
+@router.post("/{student_id}/restore")
+def restore_student_record(student_id: str, session: Session = Depends(get_session)):
+    """Restore a soft-deleted student record"""
+    student = session.exec(
+        select(StudentRecord).where(StudentRecord.student_id == student_id.upper())
+    ).first()
+    
+    if not student:
+        log_error("student_records", "restore_student_record", ErrorCode.STUDENT_RECORD_NOT_FOUND.value, f"Student record {student_id} not found")
+        raise HTTPException(
+            status_code=404,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.STUDENT_RECORD_NOT_FOUND.value,
+                message="Student record not found"
+            ).model_dump(mode='json')
+        )
+    
+    if not student.is_deleted:
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Student record is not deleted, cannot restore"
+            ).model_dump(mode='json')
+        )
+    
+    try:
+        # Restore soft-deleted student record
+        student.is_deleted = False
+        student.deleted_at = None
+        session.add(student)
+        session.commit()
+        return StandardResponse(
+            success=True,
+            code=SuccessCode.STUDENT_RECORD_RESTORED.value,
+            message=f"Student record {student_id} restored successfully"
+        )
+    except IntegrityError as e:
+        session.rollback()
+        log_integrity_error("student_records", "restore_student_record", ErrorCode.INVALID_INPUT.value, "Restore failed", str(e))
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Restore failed: Constraint violation or invalid operation"
+            ).model_dump(mode='json')
+        )
 
 
 @router.get("/deleted/list")
