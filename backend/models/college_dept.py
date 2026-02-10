@@ -19,6 +19,8 @@ class CollegeDept(CollegeDeptBase, table=True):
     college_dept_code: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    is_deleted: bool = Field(default=False)
+    deleted_at: Optional[datetime] = Field(default=None)
 
 
 class CollegeDeptCreate(CollegeDeptBase):
@@ -69,8 +71,10 @@ class CollegeDeptPublic(CollegeDeptBase):
     updated_at: datetime
     
     @field_serializer('created_at', 'updated_at')
-    def serialize_datetime(self, value: datetime) -> str:
+    def serialize_datetime(self, value: Optional[datetime]) -> Optional[str]:
         """Convert to GMT+8 and format as YYYY-MM-DD HH:MM:SS without microseconds"""
+        if value is None:
+            return None
         # Convert UTC datetime to GMT+8
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
@@ -154,3 +158,26 @@ class CollegeDeptBulkDeleteResponse(BaseModel):
     successful: int = Field(..., description="Number of items successfully deleted")
     failed: int = Field(..., description="Number of items that failed")
     results: List[CollegeDeptBulkDeleteResult] = Field(..., description="Detailed results for each item")
+
+
+# Bulk college department restore models
+class CollegeDeptBulkRestoreResult(BaseModel):
+    """Individual item result from bulk college department restore operation"""
+    index: int = Field(..., description="Index in the request list (0-based)")
+    college_dept_id: str = Field(..., description="College department ID that was restored")
+    success: bool = Field(..., description="Whether this item was restored successfully")
+    code: str = Field(..., description="Error code (if failed) or success code")
+    message: str = Field(..., description="Detailed message about the result")
+
+
+class CollegeDeptBulkRestore(BaseModel):
+    """Bulk restore request for college departments"""
+    ids: List[str] = Field(..., min_items=1, max_items=100, description="List of college department IDs to restore (1-100 items)")
+
+
+class CollegeDeptBulkRestoreResponse(BaseModel):
+    """Bulk restore response for college departments"""
+    total_items: int = Field(..., description="Total items in request")
+    successful: int = Field(..., description="Number of items successfully restored")
+    failed: int = Field(..., description="Number of items that failed")
+    results: List[CollegeDeptBulkRestoreResult] = Field(..., description="Detailed results for each item")

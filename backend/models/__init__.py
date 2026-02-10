@@ -5,6 +5,7 @@ from .student_records import StudentRecord
 from .alumni import Alumni
 from .skills import Skills, SkillsList
 from .job_listings import JobListing
+from .transaction_logs import TransactionLog
 
 __all__ = [
     "User",
@@ -14,5 +15,6 @@ __all__ = [
     "Alumni",
     "Skills",
     "SkillsList",
-    "JobListing"
+    "JobListing",
+    "TransactionLog"
 ]

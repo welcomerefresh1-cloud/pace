@@ -6,12 +6,15 @@ from models.courses import (
     Course, CourseCreate, CourseUpdate, CoursePublic,
     CourseBulkCreate, CourseBulkCreateResponse, CourseBulkCreateItem,
     CourseBulkUpdate, CourseBulkUpdateResponse, CourseBulkUpdateResult,
-    CourseBulkDelete, CourseBulkDeleteResponse, CourseBulkDeleteResult
+    CourseBulkDelete, CourseBulkDeleteResponse, CourseBulkDeleteResult,
+    CourseBulkRestore, CourseBulkRestoreResponse, CourseBulkRestoreResult
 )
 from models.college_dept import CollegeDept
+from models.student_records import StudentRecord
 from models.response_codes import ErrorCode, SuccessCode, StandardResponse
-from models.pagination import PaginationMetadata
+from models.pagination import PaginatedResponse, PaginationMetadata
 from utils.logging import log_error, log_integrity_error
+from utils.timezone import get_current_time_gmt8
 
 router = APIRouter(prefix="/courses", tags=["courses"])
 
@@ -338,8 +341,38 @@ def bulk_delete_courses(
                 failed_count += 1
                 continue
             
+            # Check if already deleted
+            if course.is_deleted:
+                results.append(CourseBulkDeleteResult(
+                    index=index,
+                    course_id=course_id,
+                    success=False,
+                    code=ErrorCode.ALREADY_DELETED.value,
+                    message="Course is already deleted, cannot delete again"
+                ))
+                failed_count += 1
+                continue
+            
+            # Check if course has active student records referencing it
+            active_students = session.exec(
+                select(StudentRecord).where((StudentRecord.course_code == course.course_code) & (StudentRecord.is_deleted == False))
+            ).first()
+            if active_students:
+                results.append(CourseBulkDeleteResult(
+                    index=index,
+                    course_id=course_id,
+                    success=False,
+                    code=ErrorCode.CANNOT_DELETE_COURSE_WITH_ACTIVE_STUDENT_RECORDS.value,
+                    message="Cannot delete course with active student records"
+                ))
+                failed_count += 1
+                continue
+            
             # Delete course
-            session.delete(course)
+            # Soft delete
+            course.is_deleted = True
+            course.deleted_at = get_current_time_gmt8()
+            session.add(course)
             session.flush()
             
             # Record successful deletion
@@ -508,13 +541,14 @@ def get_all_courses(
     offset: int = Query(0, ge=0, description="Number of records to skip"),
     search: str = Query(None, description="Search by course abbreviation or name"),
     college_dept_abbv: str = Query(None, description="Filter by college department abbreviation"),
+    include_deleted: bool = Query(False, description="Include soft-deleted records"),
     sort_by: str = Query("course_id", description="Sort by field (course_id, course_abbv, course_name)"),
     sort_order: str = Query("asc", description="Sort order (asc, desc)"),
     session: Session = Depends(get_session)
-):
+):  
     """Get all courses with filtering, searching, and sorting"""
     # Build query
-    query = select(Course)
+    query = select(Course) if include_deleted else select(Course).where(Course.is_deleted == False)
     
     # Apply search filter
     if search:
@@ -534,7 +568,8 @@ def get_all_courses(
             query = query.where(Course.college_dept_code == college_dept.college_dept_code)
     
     # Get total count after filters
-    total = session.exec(select(func.count(Course.course_code)).select_from(query.froms[0]).where(query.whereclause)).one() if query.whereclause else session.exec(select(func.count(Course.course_code))).one()
+    count_query = select(func.count(Course.course_code)) if include_deleted else select(func.count(Course.course_code)).where(Course.is_deleted == False)
+    total = session.exec(count_query).one()
     
     # Apply sorting
     sort_order_desc = sort_order.lower() == "desc"
@@ -588,7 +623,7 @@ def get_all_courses(
 def get_course(course_id: str, session: Session = Depends(get_session)):
     """Get a specific course by course_id"""
     course = session.exec(
-        select(Course).where(Course.course_id == course_id.upper())
+        select(Course).where((Course.course_id == course_id.upper()) & (Course.is_deleted == False))
     ).first()
     
     if not course:
@@ -756,8 +791,35 @@ def delete_course(course_id: str, session: Session = Depends(get_session)):
             ).model_dump(mode='json')
         )
     
+    if course.is_deleted:
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.ALREADY_DELETED.value,
+                message="Course is already deleted, cannot delete again"
+            ).model_dump(mode='json')
+        )
+    
+    # Check if course has active student records referencing it
+    active_students = session.exec(
+        select(StudentRecord).where((StudentRecord.course_code == course.course_code) & (StudentRecord.is_deleted == False))
+    ).first()
+    if active_students:
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.CANNOT_DELETE_COURSE_WITH_ACTIVE_STUDENT_RECORDS.value,
+                message="Cannot delete course with active student records"
+            ).model_dump(mode='json')
+        )
+    
     try:
-        session.delete(course)
+        # Soft delete
+        course.is_deleted = True
+        course.deleted_at = get_current_time_gmt8()
+        session.add(course)
         session.commit()
         return StandardResponse(
             success=True,
@@ -775,3 +837,268 @@ def delete_course(course_id: str, session: Session = Depends(get_session)):
                 message="Delete failed: Constraint violation or invalid operation"
             ).model_dump(mode='json')
         )
+
+
+@router.post("/bulk/restore")
+def bulk_restore_courses(
+    data: CourseBulkRestore,
+    session: Session = Depends(get_session)
+):
+    """Restore multiple soft-deleted courses"""
+    results = []
+    successful_count = 0
+    failed_count = 0
+    
+    for index, course_id in enumerate(data.ids):
+        try:
+            course = session.exec(
+                select(Course).where(Course.course_id == course_id.upper())
+            ).first()
+            
+            if not course:
+                results.append(CourseBulkRestoreResult(
+                    index=index,
+                    course_id=course_id,
+                    success=False,
+                    code=ErrorCode.COURSE_NOT_FOUND.value,
+                    message=f"Course '{course_id}' not found"
+                ))
+                failed_count += 1
+                continue
+            
+            if not course.is_deleted:
+                results.append(CourseBulkRestoreResult(
+                    index=index,
+                    course_id=course_id,
+                    success=False,
+                    code=ErrorCode.INVALID_INPUT.value,
+                    message=f"Course '{course_id}' is not deleted"
+                ))
+                failed_count += 1
+                continue
+            
+            # Restore course
+            course.is_deleted = False
+            course.deleted_at = None
+            session.add(course)
+            session.flush()
+            
+            # Record successful restoration
+            results.append(CourseBulkRestoreResult(
+                index=index,
+                course_id=course_id,
+                success=True,
+                code=SuccessCode.COURSE_RESTORED.value,
+                message="Course restored successfully"
+            ))
+            successful_count += 1
+        
+        except IntegrityError as e:
+            session.rollback()
+            error_code = ErrorCode.INVALID_INPUT.value
+            error_msg = "Restore failed: Constraint violation or related data issue"
+            results.append(CourseBulkRestoreResult(
+                index=index,
+                course_id=course_id,
+                success=False,
+                code=error_code,
+                message=error_msg
+            ))
+            log_integrity_error("courses", "bulk_restore_courses", error_code, error_msg, str(e))
+            failed_count += 1
+    
+    session.commit()
+    return StandardResponse(
+        success=failed_count == 0,
+        code=SuccessCode.COURSES_BULK_RESTORED.value,
+        message=f"Restore operation completed: {successful_count} succeeded, {failed_count} failed",
+        data=CourseBulkRestoreResponse(
+            total_items=len(data.ids),
+            successful=successful_count,
+            failed=failed_count,
+            results=results
+        )
+    )
+
+
+@router.post("/{course_id}/restore")
+def restore_course(course_id: str, session: Session = Depends(get_session)):
+    """Restore a soft-deleted course"""
+    course = session.exec(
+        select(Course).where(Course.course_id == course_id.upper())
+    ).first()
+    
+    if not course:
+        log_error("courses", "restore_course", ErrorCode.COURSE_NOT_FOUND.value, f"Course {course_id} not found")
+        raise HTTPException(
+            status_code=404,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.COURSE_NOT_FOUND.value,
+                message="Course not found"
+            ).model_dump(mode='json')
+        )
+    
+    if not course.is_deleted:
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Course is not deleted, cannot restore"
+            ).model_dump(mode='json')
+        )
+    
+    try:
+        # Restore soft-deleted course
+        course.is_deleted = False
+        course.deleted_at = None
+        session.add(course)
+        session.commit()
+        return StandardResponse(
+            success=True,
+            code=SuccessCode.COURSE_RESTORED.value,
+            message=f"Course {course_id} restored successfully"
+        )
+    except IntegrityError as e:
+        session.rollback()
+        log_integrity_error("courses", "restore_course", ErrorCode.INVALID_INPUT.value, "Restore failed", str(e))
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Restore failed: Constraint violation or invalid operation"
+            ).model_dump(mode='json')
+        )
+
+
+@router.get("/deleted/list")
+def get_deleted_courses(
+    limit: int = Query(10, ge=0, description="Records per page (0 = all records)"),
+    offset: int = Query(0, ge=0, description="Number of records to skip"),
+    search: str = Query(None, description="Search by course abbreviation or name"),
+    sort_by: str = Query("deleted_at", description="Sort by field (course_id, course_abbv, course_name, deleted_at)"),
+    sort_order: str = Query("desc", description="Sort order (asc, desc)"),
+    session: Session = Depends(get_session)
+):
+    """Get all soft-deleted courses (admin endpoint)"""
+    # Build query - only show deleted records
+    query = select(Course).where(Course.is_deleted == True)
+    
+    # Apply search filter
+    if search:
+        search_like = f"%{search}%"
+        query = query.where(
+            (Course.course_abbv.ilike(search_like)) | (Course.course_name.ilike(search_like))
+        )
+    
+    # Get total count
+    total = session.exec(select(func.count(Course.course_code)).where(Course.is_deleted == True)).one()
+    
+    # Apply sorting
+    sort_order_desc = sort_order.lower() == "desc"
+    if sort_by.lower() == "course_abbv":
+        query = query.order_by(Course.course_abbv.desc() if sort_order_desc else Course.course_abbv)
+    elif sort_by.lower() == "course_name":
+        query = query.order_by(Course.course_name.desc() if sort_order_desc else Course.course_name)
+    elif sort_by.lower() == "deleted_at":
+        query = query.order_by(Course.deleted_at.desc() if sort_order_desc else Course.deleted_at)
+    else:  # default to course_id
+        query = query.order_by(Course.course_id.desc() if sort_order_desc else Course.course_id)
+    
+    # Apply pagination
+    if limit > 0:
+        query = query.offset(offset).limit(limit)
+    
+    courses = session.exec(query).all()
+    public_courses = [CoursePublic.model_validate(course) for course in courses]
+    
+    # Calculate pagination metadata
+    returned = len(courses)
+    has_next = (offset + returned) < total if limit > 0 else False
+    
+    pagination = PaginationMetadata(
+        total=total,
+        limit=limit,
+        offset=offset,
+        returned=returned,
+        has_next=has_next
+    )
+    
+    return PaginatedResponse(
+        success=True,
+        code=SuccessCode.COURSES_RETRIEVED.value,
+        message=f"Retrieved {returned} deleted courses",
+        data=public_courses,
+        pagination=pagination
+    )
+
+
+@router.get("/all/list")
+def get_all_courses_including_deleted(
+    limit: int = Query(10, ge=0, description="Records per page (0 = all records)"),
+    offset: int = Query(0, ge=0, description="Number of records to skip"),
+    search: str = Query(None, description="Search by course abbreviation or name"),
+    college_dept_abbv: str = Query(None, description="Filter by college department abbreviation"),
+    sort_by: str = Query("course_id", description="Sort by field (course_id, course_abbv, course_name)"),
+    sort_order: str = Query("asc", description="Sort order (asc, desc)"),
+    session: Session = Depends(get_session)
+):
+    """Get all courses including soft-deleted (admin endpoint)"""
+    # Build query - include all records
+    query = select(Course)
+    
+    # Apply search filter
+    if search:
+        search_like = f"%{search}%"
+        query = query.where(
+            (Course.course_abbv.ilike(search_like)) | (Course.course_name.ilike(search_like))
+        )
+    
+    # Apply college_dept filter
+    if college_dept_abbv:
+        college_dept = session.exec(
+            select(CollegeDept).where(CollegeDept.college_dept_abbv == college_dept_abbv.upper())
+        ).first()
+        if college_dept:
+            query = query.where(Course.college_dept_code == college_dept.college_dept_code)
+    
+    # Get total count
+    total = session.exec(select(func.count(Course.course_code))).one()
+    
+    # Apply sorting
+    sort_order_desc = sort_order.lower() == "desc"
+    if sort_by.lower() == "course_abbv":
+        query = query.order_by(Course.course_abbv.desc() if sort_order_desc else Course.course_abbv)
+    elif sort_by.lower() == "course_name":
+        query = query.order_by(Course.course_name.desc() if sort_order_desc else Course.course_name)
+    else:  # default to course_id
+        query = query.order_by(Course.course_id.desc() if sort_order_desc else Course.course_id)
+    
+    # Apply pagination
+    if limit > 0:
+        query = query.offset(offset).limit(limit)
+    
+    courses = session.exec(query).all()
+    public_courses = [CoursePublic.model_validate(course) for course in courses]
+    
+    # Calculate pagination metadata
+    returned = len(courses)
+    has_next = (offset + returned) < total if limit > 0 else False
+    
+    pagination = PaginationMetadata(
+        total=total,
+        limit=limit,
+        offset=offset,
+        returned=returned,
+        has_next=has_next
+    )
+    
+    return PaginatedResponse(
+        success=True,
+        code=SuccessCode.COURSES_RETRIEVED.value,
+        message=f"Retrieved {returned} courses (including deleted)",
+        data=public_courses,
+        pagination=pagination
+    )

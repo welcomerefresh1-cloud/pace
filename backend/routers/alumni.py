@@ -10,13 +10,15 @@ from models.composite import (
     CompleteAlumniRegistration, CompleteAlumniResponse,
     BulkAlumniRegister, BulkAlumniRegistrationResult, BulkAlumniRegisterResponse, BulkAlumniRegistrationItemSafeDisplay,
     BulkAlumniUpdate, BulkAlumniUpdateItem, BulkAlumniUpdateResult, BulkAlumniUpdateResponse,
-    BulkAlumniDelete, BulkAlumniDeleteResult, BulkAlumniDeleteResponse
+    BulkAlumniDelete, BulkAlumniDeleteResult, BulkAlumniDeleteResponse,
+    BulkAlumniRestore, BulkAlumniRestoreResult, BulkAlumniRestoreResponse
 )
 from models.responses import AlumniFullProfile
 from models.response_codes import ErrorCode, SuccessCode, StandardResponse
 from models.pagination import PaginatedResponse, PaginationMetadata
 from utils.logging import log_error, log_integrity_error
 from utils.auth import hash_password
+from utils.timezone import get_current_time_gmt8
 
 router = APIRouter(prefix="/alumni", tags=["alumni"])
 
@@ -336,13 +338,14 @@ def get_all_alumni(
     offset: int = Query(0, ge=0, description="Number of records to skip"),
     search: str = Query(None, description="Search by first name, last name, email, or username"),
     gender: str = Query(None, description="Filter by gender (M, F, Other)"),
+    include_deleted: bool = Query(False, description="Include soft-deleted records"),
     sort_by: str = Query("alumni_id", description="Sort by field (alumni_id, first_name, last_name, created_at)"),
     sort_order: str = Query("asc", description="Sort order (asc, desc)"),
     session: Session = Depends(get_session)
 ):
     """Get all alumni records with filtering, searching, and sorting"""
     # Build query
-    query = select(Alumni)
+    query = select(Alumni) if include_deleted else select(Alumni).where(Alumni.is_deleted == False)
     
     # Apply search filter
     if search:
@@ -359,7 +362,8 @@ def get_all_alumni(
         query = query.where(Alumni.gender == gender.upper())
     
     # Get total count after filters
-    total = session.exec(select(func.count(Alumni.alumni_code)).select_from(query.froms[0]).where(query.whereclause)).one() if query.whereclause else session.exec(select(func.count(Alumni.alumni_code))).one()
+    count_query = select(func.count(Alumni.alumni_code)) if include_deleted else select(func.count(Alumni.alumni_code)).where(Alumni.is_deleted == False)
+    total = session.exec(count_query).one()
     
     # Apply sorting
     sort_order_desc = sort_order.lower() == "desc"
@@ -451,7 +455,7 @@ def get_all_alumni(
 def get_alumni(alumni_id: str, session: Session = Depends(get_session)):
     """Get specific alumni by alumni_id with full profile"""
     alumni = session.exec(
-        select(Alumni).where(Alumni.alumni_id == alumni_id.upper())
+        select(Alumni).where((Alumni.alumni_id == alumni_id.upper()) & (Alumni.is_deleted == False))
     ).first()
     
     if not alumni:
@@ -801,7 +805,32 @@ def bulk_delete_alumni(
                 failed_count += 1
                 continue
             
-            session.delete(alumni)
+            # Check if already deleted
+            if alumni.is_deleted:
+                results.append(BulkAlumniDeleteResult(
+                    index=index,
+                    alumni_id=alumni_id,
+                    success=False,
+                    code=ErrorCode.ALREADY_DELETED.value,
+                    message="Alumni is already deleted, cannot delete again"
+                ))
+                failed_count += 1
+                continue
+            
+            # Cascade soft delete to associated student records
+            student_records = session.exec(
+                select(StudentRecord).where(StudentRecord.alumni_code == alumni.alumni_code)
+            ).all()
+            for student in student_records:
+                if not student.is_deleted:
+                    student.is_deleted = True
+                    student.deleted_at = get_current_time_gmt8()
+                    session.add(student)
+            
+            # Soft delete the alumni
+            alumni.is_deleted = True
+            alumni.deleted_at = get_current_time_gmt8()
+            session.add(alumni)
             session.flush()
             
             # Record successful deletion
@@ -883,8 +912,31 @@ def delete_alumni(alumni_id: str, session: Session = Depends(get_session)):
             ).model_dump(mode='json')
         )
     
+    if alumni.is_deleted:
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.ALREADY_DELETED.value,
+                message="Alumni is already deleted, cannot delete again"
+            ).model_dump(mode='json')
+        )
+    
     try:
-        session.delete(alumni)
+        # Cascade soft delete to associated student records
+        student_records = session.exec(
+            select(StudentRecord).where(StudentRecord.alumni_code == alumni.alumni_code)
+        ).all()
+        for student in student_records:
+            if not student.is_deleted:
+                student.is_deleted = True
+                student.deleted_at = get_current_time_gmt8()
+                session.add(student)
+        
+        # Soft delete the alumni
+        alumni.is_deleted = True
+        alumni.deleted_at = get_current_time_gmt8()
+        session.add(alumni)
         session.commit()
         return StandardResponse(
             success=True,
@@ -902,3 +954,284 @@ def delete_alumni(alumni_id: str, session: Session = Depends(get_session)):
                 message="Delete failed: Constraint violation or invalid operation"
             ).model_dump(mode='json')
         )
+
+
+@router.post("/bulk/restore")
+def bulk_restore_alumni(
+    data: BulkAlumniRestore,
+    session: Session = Depends(get_session)
+):
+    """Restore multiple soft-deleted alumni"""
+    results = []
+    successful_count = 0
+    failed_count = 0
+    
+    for index, alumni_id in enumerate(data.ids):
+        try:
+            alumni = session.exec(
+                select(Alumni).where(Alumni.alumni_id == alumni_id.upper())
+            ).first()
+            
+            if not alumni:
+                results.append(BulkAlumniRestoreResult(
+                    index=index,
+                    alumni_id=alumni_id,
+                    success=False,
+                    code=ErrorCode.ALUMNI_NOT_FOUND.value,
+                    message=f"Alumni '{alumni_id}' not found"
+                ))
+                failed_count += 1
+                continue
+            
+            if not alumni.is_deleted:
+                results.append(BulkAlumniRestoreResult(
+                    index=index,
+                    alumni_id=alumni_id,
+                    success=False,
+                    code=ErrorCode.INVALID_INPUT.value,
+                    message=f"Alumni '{alumni_id}' is not deleted"
+                ))
+                failed_count += 1
+                continue
+            
+            # Cascade restore associated student records
+            student_records = session.exec(
+                select(StudentRecord).where((StudentRecord.alumni_code == alumni.alumni_code) & (StudentRecord.is_deleted == True))
+            ).all()
+            for student in student_records:
+                student.is_deleted = False
+                student.deleted_at = None
+                session.add(student)
+            
+            # Restore alumni
+            alumni.is_deleted = False
+            alumni.deleted_at = None
+            session.add(alumni)
+            session.flush()
+            
+            # Record successful restoration
+            results.append(BulkAlumniRestoreResult(
+                index=index,
+                alumni_id=alumni_id,
+                success=True,
+                code=SuccessCode.ALUMNI_RESTORED.value,
+                message="Alumni restored successfully"
+            ))
+            successful_count += 1
+        
+        except IntegrityError as e:
+            session.rollback()
+            error_code = ErrorCode.INVALID_INPUT.value
+            error_msg = "Restore failed: Constraint violation or related data issue"
+            results.append(BulkAlumniRestoreResult(
+                index=index,
+                alumni_id=alumni_id,
+                success=False,
+                code=error_code,
+                message=error_msg
+            ))
+            log_integrity_error("alumni", "bulk_restore_alumni", error_code, error_msg, str(e))
+            failed_count += 1
+    
+    session.commit()
+    return StandardResponse(
+        success=failed_count == 0,
+        code=SuccessCode.ALUMNI_BULK_RESTORED.value,
+        message=f"Restore operation completed: {successful_count} succeeded, {failed_count} failed",
+        data=BulkAlumniRestoreResponse(
+            total_items=len(data.ids),
+            successful=successful_count,
+            failed=failed_count,
+            results=results
+        )
+    )
+
+
+@router.post("/{alumni_id}/restore")
+def restore_alumni(alumni_id: str, session: Session = Depends(get_session)):
+    """Restore a soft-deleted alumni record"""
+    alumni = session.exec(
+        select(Alumni).where(Alumni.alumni_id == alumni_id.upper())
+    ).first()
+    
+    if not alumni:
+        log_error("alumni", "restore_alumni", ErrorCode.ALUMNI_NOT_FOUND.value, f"Alumni {alumni_id} not found")
+        raise HTTPException(
+            status_code=404,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.ALUMNI_NOT_FOUND.value,
+                message="Alumni not found"
+            ).model_dump(mode='json')
+        )
+    
+    if not alumni.is_deleted:
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Alumni is not deleted, cannot restore"
+            ).model_dump(mode='json')
+        )
+    
+    try:
+        # Cascade restore associated student records
+        student_records = session.exec(
+            select(StudentRecord).where((StudentRecord.alumni_code == alumni.alumni_code) & (StudentRecord.is_deleted == True))
+        ).all()
+        for student in student_records:
+            student.is_deleted = False
+            student.deleted_at = None
+            session.add(student)
+        
+        # Restore soft-deleted alumni
+        alumni.is_deleted = False
+        alumni.deleted_at = None
+        session.add(alumni)
+        session.commit()
+        return StandardResponse(
+            success=True,
+            code=SuccessCode.ALUMNI_RESTORED.value,
+            message=f"Alumni {alumni_id} restored successfully"
+        )
+    except IntegrityError as e:
+        session.rollback()
+        log_integrity_error("alumni", "restore_alumni", ErrorCode.INVALID_INPUT.value, "Restore failed", str(e))
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Restore failed: Constraint violation or invalid operation"
+            ).model_dump(mode='json')
+        )
+
+
+@router.get("/deleted/list")
+def get_deleted_alumni(
+    limit: int = Query(10, ge=0, description="Records per page (0 = all records)"),
+    offset: int = Query(0, ge=0, description="Number of records to skip"),
+    search: str = Query(None, description="Search by first name or last name"),
+    sort_by: str = Query("deleted_at", description="Sort by field (alumni_id, first_name, last_name, deleted_at)"),
+    sort_order: str = Query("desc", description="Sort order (asc, desc)"),
+    session: Session = Depends(get_session)
+):
+    """Get all soft-deleted alumni (admin endpoint)"""
+    # Build query - only show deleted records
+    query = select(Alumni).where(Alumni.is_deleted == True)
+    
+    # Apply search filter
+    if search:
+        search_like = f"%{search}%"
+        query = query.where(
+            (Alumni.first_name.ilike(search_like)) | (Alumni.last_name.ilike(search_like))
+        )
+    
+    # Get total count
+    total = session.exec(select(func.count(Alumni.alumni_code)).where(Alumni.is_deleted == True)).one()
+    
+    # Apply sorting
+    sort_order_desc = sort_order.lower() == "desc"
+    if sort_by.lower() == "first_name":
+        query = query.order_by(Alumni.first_name.desc() if sort_order_desc else Alumni.first_name)
+    elif sort_by.lower() == "last_name":
+        query = query.order_by(Alumni.last_name.desc() if sort_order_desc else Alumni.last_name)
+    elif sort_by.lower() == "deleted_at":
+        query = query.order_by(Alumni.deleted_at.desc() if sort_order_desc else Alumni.deleted_at)
+    else:  # default to alumni_id
+        query = query.order_by(Alumni.alumni_id.desc() if sort_order_desc else Alumni.alumni_id)
+    
+    # Apply pagination
+    if limit > 0:
+        query = query.offset(offset).limit(limit)
+    
+    alumni_list = session.exec(query).all()
+    public_alumni = [AlumniPublic.model_validate(alumni) for alumni in alumni_list]
+    
+    # Calculate pagination metadata
+    returned = len(alumni_list)
+    has_next = (offset + returned) < total if limit > 0 else False
+    
+    pagination = PaginationMetadata(
+        total=total,
+        limit=limit,
+        offset=offset,
+        returned=returned,
+        has_next=has_next
+    )
+    
+    return PaginatedResponse(
+        success=True,
+        code=SuccessCode.ALUMNI_LIST_RETRIEVED.value,
+        message=f"Retrieved {returned} deleted alumni",
+        data=public_alumni,
+        pagination=pagination
+    )
+
+
+@router.get("/all/list")
+def get_all_alumni_including_deleted(
+    limit: int = Query(10, ge=0, description="Records per page (0 = all records)"),
+    offset: int = Query(0, ge=0, description="Number of records to skip"),
+    search: str = Query(None, description="Search by first name, last name, email, or username"),
+    gender: str = Query(None, description="Filter by gender (M, F, Other)"),
+    sort_by: str = Query("alumni_id", description="Sort by field (alumni_id, first_name, last_name, created_at)"),
+    sort_order: str = Query("asc", description="Sort order (asc, desc)"),
+    session: Session = Depends(get_session)
+):
+    """Get all alumni including soft-deleted (admin endpoint)"""
+    # Build query - include all records
+    query = select(Alumni)
+    
+    # Apply search filter
+    if search:
+        search_like = f"%{search}%"
+        query = query.where(
+            (Alumni.first_name.ilike(search_like)) | (Alumni.last_name.ilike(search_like))
+        )
+    
+    # Apply gender filter
+    if gender:
+        query = query.where(Alumni.gender == gender.upper())
+    
+    # Get total count
+    total = session.exec(select(func.count(Alumni.alumni_code))).one()
+    
+    # Apply sorting
+    sort_order_desc = sort_order.lower() == "desc"
+    if sort_by.lower() == "first_name":
+        query = query.order_by(Alumni.first_name.desc() if sort_order_desc else Alumni.first_name)
+    elif sort_by.lower() == "last_name":
+        query = query.order_by(Alumni.last_name.desc() if sort_order_desc else Alumni.last_name)
+    elif sort_by.lower() == "created_at":
+        query = query.order_by(Alumni.created_at.desc() if sort_order_desc else Alumni.created_at)
+    else:  # default to alumni_id
+        query = query.order_by(Alumni.alumni_id.desc() if sort_order_desc else Alumni.alumni_id)
+    
+    # Apply pagination
+    if limit > 0:
+        query = query.offset(offset).limit(limit)
+    
+    alumni_list = session.exec(query).all()
+    public_alumni = [AlumniPublic.model_validate(alumni) for alumni in alumni_list]
+    
+    # Calculate pagination metadata
+    returned = len(alumni_list)
+    has_next = (offset + returned) < total if limit > 0 else False
+    
+    pagination = PaginationMetadata(
+        total=total,
+        limit=limit,
+        offset=offset,
+        returned=returned,
+        has_next=has_next
+    )
+    
+    return PaginatedResponse(
+        success=True,
+        code=SuccessCode.ALUMNI_LIST_RETRIEVED.value,
+        message=f"Retrieved {returned} alumni (including deleted)",
+        data=public_alumni,
+        pagination=pagination
+    )

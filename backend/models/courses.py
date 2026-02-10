@@ -17,9 +17,11 @@ class Course(CourseBase, table=True):
     
     course_id: str = Field(max_length=12, unique=True, index=True)
     course_code: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    college_dept_code: uuid.UUID = Field(foreign_key="college_depts.college_dept_code", ondelete="CASCADE")
+    college_dept_code: Optional[uuid.UUID] = Field(default=None, foreign_key="college_depts.college_dept_code", ondelete="SET NULL")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    is_deleted: bool = Field(default=False)
+    deleted_at: Optional[datetime] = Field(default=None)
 
 
 class CourseCreate(CourseBase):
@@ -74,8 +76,10 @@ class CoursePublic(CourseBase):
     updated_at: datetime
     
     @field_serializer('created_at', 'updated_at')
-    def serialize_datetime(self, value: datetime) -> str:
+    def serialize_datetime(self, value: Optional[datetime]) -> Optional[str]:
         """Convert to GMT+8 and format as YYYY-MM-DD HH:MM:SS without microseconds"""
+        if value is None:
+            return None
         # Convert UTC datetime to GMT+8
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
@@ -160,3 +164,26 @@ class CourseBulkDeleteResponse(BaseModel):
     successful: int = Field(..., description="Number of items successfully deleted")
     failed: int = Field(..., description="Number of items that failed")
     results: List[CourseBulkDeleteResult] = Field(..., description="Detailed results for each item")
+
+
+# Bulk course restore models
+class CourseBulkRestoreResult(BaseModel):
+    """Individual item result from bulk course restore operation"""
+    index: int = Field(..., description="Index in the request list (0-based)")
+    course_id: str = Field(..., description="Course ID that was restored")
+    success: bool = Field(..., description="Whether this item was restored successfully")
+    code: str = Field(..., description="Error code (if failed) or success code")
+    message: str = Field(..., description="Detailed message about the result")
+
+
+class CourseBulkRestore(BaseModel):
+    """Bulk restore request for courses"""
+    ids: List[str] = Field(..., min_items=1, max_items=100, description="List of course IDs to restore (1-100 items)")
+
+
+class CourseBulkRestoreResponse(BaseModel):
+    """Bulk restore response for courses"""
+    total_items: int = Field(..., description="Total items in request")
+    successful: int = Field(..., description="Number of items successfully restored")
+    failed: int = Field(..., description="Number of items that failed")
+    results: List[CourseBulkRestoreResult] = Field(..., description="Detailed results for each item")

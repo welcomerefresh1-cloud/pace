@@ -21,9 +21,12 @@ class StudentRecord(StudentRecordBase, table=True):
     __tablename__ = "student_records"
     
     student_code: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    course_code: uuid.UUID = Field(foreign_key="courses.course_code", ondelete="CASCADE")
-    alumni_code: uuid.UUID = Field(foreign_key="alumni.alumni_code", unique=True, ondelete="CASCADE")
+    course_code: Optional[uuid.UUID] = Field(default=None, foreign_key="courses.course_code", ondelete="SET NULL")
+    alumni_code: Optional[uuid.UUID] = Field(default=None, foreign_key="alumni.alumni_code", unique=True, ondelete="SET NULL")
     created_at: datetime = Field(default_factory=get_current_time_gmt8)
+    updated_at: datetime = Field(default_factory=get_current_time_gmt8)
+    is_deleted: bool = Field(default=False)
+    deleted_at: Optional[datetime] = Field(default=None)
 
 
 class StudentRecordCreate(StudentRecordBase):
@@ -83,10 +86,13 @@ class StudentRecordUpdate(SQLModel):
 
 class StudentRecordPublic(StudentRecordBase):
     created_at: datetime
+    updated_at: datetime
     
-    @field_serializer('created_at')
-    def serialize_datetime(self, value: datetime) -> str:
+    @field_serializer('created_at', 'updated_at')
+    def serialize_datetime(self, value: Optional[datetime]) -> Optional[str]:
         """Convert to GMT+8 and format as YYYY-MM-DD HH:MM:SS without microseconds"""
+        if value is None:
+            return None
         # Convert UTC datetime to GMT+8
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
@@ -212,3 +218,26 @@ class StudentRecordBulkDeleteResponse(BaseModel):
     successful: int = Field(..., description="Number of items successfully deleted")
     failed: int = Field(..., description="Number of items that failed")
     results: List[StudentRecordBulkDeleteResult] = Field(..., description="Detailed results for each item")
+
+
+# Bulk student record restore models
+class StudentRecordBulkRestoreResult(BaseModel):
+    """Individual item result from bulk student record restore operation"""
+    index: int = Field(..., description="Index in the request list (0-based)")
+    student_id: str = Field(..., description="Student record ID that was restored")
+    success: bool = Field(..., description="Whether this item was restored successfully")
+    code: str = Field(..., description="Error code (if failed) or success code")
+    message: str = Field(..., description="Detailed message about the result")
+
+
+class StudentRecordBulkRestore(BaseModel):
+    """Bulk restore request for student records"""
+    ids: List[str] = Field(..., min_items=1, max_items=100, description="List of student record IDs to restore (1-100 items)")
+
+
+class StudentRecordBulkRestoreResponse(BaseModel):
+    """Bulk restore response for student records"""
+    total_items: int = Field(..., description="Total items in request")
+    successful: int = Field(..., description="Number of items successfully restored")
+    failed: int = Field(..., description="Number of items that failed")
+    results: List[StudentRecordBulkRestoreResult] = Field(..., description="Detailed results for each item")

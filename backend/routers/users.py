@@ -6,12 +6,16 @@ from models.users import (
     User, UserCreate, UserUpdate, UserPublic, UserType, SuccessResponse,
     UserBulkCreate, UserBulkCreateItem, UserBulkCreateResponse, UserCreateSafeDisplay,
     UserBulkUpdate, UserBulkUpdateItem, UserBulkUpdateResult, UserBulkUpdateResponse, UserUpdateSafeDisplay,
-    UserBulkDelete, UserBulkDeleteResult, UserBulkDeleteResponse
+    UserBulkDelete, UserBulkDeleteResult, UserBulkDeleteResponse,
+    UserBulkRestore, UserBulkRestoreResult, UserBulkRestoreResponse
 )
 from models.response_codes import ErrorCode, SuccessCode, StandardResponse
 from models.pagination import PaginatedResponse, PaginationMetadata
+from models.alumni import Alumni
+from models.student_records import StudentRecord
 from utils.auth import verify_password
 from utils.logging import log_error, log_integrity_error, log_auth_error
+from utils.timezone import get_current_time_gmt8
 from datetime import datetime
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -221,13 +225,14 @@ def get_all_users(
     offset: int = Query(0, ge=0, description="Number of records to skip"),
     search: str = Query(None, description="Search by username or email"),
     user_type: str = Query(None, description="Filter by user type (USER, STAFF, ADMIN)"),
+    include_deleted: bool = Query(False, description="Include soft-deleted records"),
     sort_by: str = Query("user_id", description="Sort by field (user_id, username, email, created_at)"),
     sort_order: str = Query("asc", description="Sort order (asc, desc)"),
     session: Session = Depends(get_session)
 ):
     """Get all users with filtering, searching, and sorting"""
     # Build query
-    query = select(User)
+    query = select(User) if include_deleted else select(User).where(User.is_deleted == False)
     
     # Apply search filter
     if search:
@@ -241,7 +246,8 @@ def get_all_users(
         query = query.where(User.user_type == user_type.upper())
     
     # Get total count after filters
-    total = session.exec(select(func.count(User.user_code)).select_from(query.froms[0]).where(query.whereclause)).one() if query.whereclause else session.exec(select(func.count(User.user_code))).one()
+    count_query = select(func.count(User.user_code)) if include_deleted else select(func.count(User.user_code)).where(User.is_deleted == False)
+    total = session.exec(count_query).one()
     
     # Apply sorting
     sort_order_desc = sort_order.lower() == "desc"
@@ -287,7 +293,7 @@ def get_all_users(
 def get_user(user_id: str, session: Session = Depends(get_session)):
     """Get a specific user by user_id"""
     user = session.exec(
-        select(User).where(User.user_id == user_id.upper())
+        select(User).where((User.user_id == user_id.upper()) & (User.is_deleted == False))
     ).first()
     
     if not user:
@@ -610,7 +616,40 @@ def bulk_delete_users(
                 failed_count += 1
                 continue
             
-            session.delete(user)
+            # Check if already deleted
+            if user.is_deleted:
+                results.append(UserBulkDeleteResult(
+                    index=index,
+                    user_id=user_id,
+                    success=False,
+                    code=ErrorCode.ALREADY_DELETED.value,
+                    message="User is already deleted, cannot delete again"
+                ))
+                failed_count += 1
+                continue
+            
+            # Cascade soft delete to associated alumni
+            alumni_records = session.exec(
+                select(Alumni).where(Alumni.user_code == user.user_code)
+            ).all()
+            for alumni in alumni_records:
+                alumni.is_deleted = True
+                alumni.deleted_at = get_current_time_gmt8()
+                session.add(alumni)
+                
+                # Also cascade delete associated student records
+                student_records = session.exec(
+                    select(StudentRecord).where(StudentRecord.alumni_code == alumni.alumni_code)
+                ).all()
+                for student in student_records:
+                    student.is_deleted = True
+                    student.deleted_at = get_current_time_gmt8()
+                    session.add(student)
+            
+            # Soft delete the user
+            user.is_deleted = True
+            user.deleted_at = get_current_time_gmt8()
+            session.add(user)
             session.flush()
             
             # Record successful deletion
@@ -696,6 +735,16 @@ def delete_user(
             ).model_dump(mode='json')
         )
     
+    if user.is_deleted:
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.ALREADY_DELETED.value,
+                message="User is already deleted, cannot delete again"
+            ).model_dump(mode='json')
+        )
+    
     # Verify password before deletion
     if not verify_password(password, user.password):
         log_auth_error("delete_user", user.username, ErrorCode.INVALID_CREDENTIALS.value, "Incorrect password on deletion")
@@ -709,7 +758,30 @@ def delete_user(
         )
     
     try:
-        session.delete(user)
+        # Cascade soft delete to associated alumni
+        alumni_records = session.exec(
+            select(Alumni).where(Alumni.user_code == user.user_code)
+        ).all()
+        for alumni in alumni_records:
+            if not alumni.is_deleted:
+                alumni.is_deleted = True
+                alumni.deleted_at = get_current_time_gmt8()
+                session.add(alumni)
+                
+                # Also cascade delete associated student records
+                student_records = session.exec(
+                    select(StudentRecord).where(StudentRecord.alumni_code == alumni.alumni_code)
+                ).all()
+                for student in student_records:
+                    if not student.is_deleted:
+                        student.is_deleted = True
+                        student.deleted_at = get_current_time_gmt8()
+                        session.add(student)
+        
+        # Soft delete the user
+        user.is_deleted = True
+        user.deleted_at = get_current_time_gmt8()
+        session.add(user)
         session.commit()
         return StandardResponse(
             success=True,
@@ -727,4 +799,273 @@ def delete_user(
                 message="Delete failed: Constraint violation or invalid operation"
             ).model_dump(mode='json')
         )
+
+
+
+
+@router.post("/bulk/restore")
+def bulk_restore_users(
+    data: UserBulkRestore,
+    session: Session = Depends(get_session)
+):
+    """Restore multiple soft-deleted users"""
+    results = []
+    successful_count = 0
+    failed_count = 0
+    
+    for index, user_id in enumerate(data.ids):
+        try:
+            user = session.exec(
+                select(User).where(User.user_id == user_id.upper())
+            ).first()
+            
+            if not user:
+                results.append(UserBulkRestoreResult(
+                    index=index,
+                    user_id=user_id,
+                    success=False,
+                    code=ErrorCode.USER_NOT_FOUND.value,
+                    message=f"User '{user_id}' not found"
+                ))
+                failed_count += 1
+                continue
+            
+            if not user.is_deleted:
+                results.append(UserBulkRestoreResult(
+                    index=index,
+                    user_id=user_id,
+                    success=False,
+                    code=ErrorCode.INVALID_INPUT.value,
+                    message=f"User '{user_id}' is not deleted"
+                ))
+                failed_count += 1
+                continue
+            
+            # Restore user
+            user.is_deleted = False
+            user.deleted_at = None
+            session.add(user)
+            session.flush()
+            
+            # Record successful restoration
+            results.append(UserBulkRestoreResult(
+                index=index,
+                user_id=user_id,
+                success=True,
+                code=SuccessCode.USER_RESTORED.value,
+                message="User restored successfully"
+            ))
+            successful_count += 1
+        
+        except IntegrityError as e:
+            session.rollback()
+            error_code = ErrorCode.INVALID_INPUT.value
+            error_msg = "Restore failed: Constraint violation or related data issue"
+            results.append(UserBulkRestoreResult(
+                index=index,
+                user_id=user_id,
+                success=False,
+                code=error_code,
+                message=error_msg
+            ))
+            log_integrity_error("users", "bulk_restore_users", error_code, error_msg, str(e))
+            failed_count += 1
+    
+    session.commit()
+    return StandardResponse(
+        success=failed_count == 0,
+        code=SuccessCode.USERS_BULK_RESTORED.value,
+        message=f"Restore operation completed: {successful_count} succeeded, {failed_count} failed",
+        data=UserBulkRestoreResponse(
+            total_items=len(data.ids),
+            successful=successful_count,
+            failed=failed_count,
+            results=results
+        )
+    )
+
+
+@router.post("/{user_id}/restore")
+def restore_user(user_id: str, session: Session = Depends(get_session)):
+    """Restore a soft-deleted user"""
+    user = session.exec(
+        select(User).where(User.user_id == user_id.upper())
+    ).first()
+    
+    if not user:
+        log_error("users", "restore_user", ErrorCode.USER_NOT_FOUND.value, f"User {user_id} not found")
+        raise HTTPException(
+            status_code=404,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.USER_NOT_FOUND.value,
+                message="User not found"
+            ).model_dump(mode='json')
+        )
+    
+    if not user.is_deleted:
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="User is not deleted, cannot restore"
+            ).model_dump(mode='json')
+        )
+    
+    try:
+        # Restore soft-deleted user
+        user.is_deleted = False
+        user.deleted_at = None
+        session.add(user)
+        session.commit()
+        return StandardResponse(
+            success=True,
+            code=SuccessCode.USER_RESTORED.value,
+            message=f"User {user_id} restored successfully"
+        )
+    except IntegrityError as e:
+        session.rollback()
+        log_integrity_error("users", "restore_user", ErrorCode.INVALID_INPUT.value, "Restore failed", str(e))
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Restore failed: Constraint violation or invalid operation"
+            ).model_dump(mode='json')
+        )
+
+
+@router.get("/deleted/list")
+def get_deleted_users(
+    limit: int = Query(10, ge=0, description="Records per page (0 = all records)"),
+    offset: int = Query(0, ge=0, description="Number of records to skip"),
+    search: str = Query(None, description="Search by username or email"),
+    sort_by: str = Query("deleted_at", description="Sort by field (user_id, username, email, deleted_at)"),
+    sort_order: str = Query("desc", description="Sort order (asc, desc)"),
+    session: Session = Depends(get_session)
+):
+    """Get all soft-deleted users (admin endpoint)"""
+    # Build query - only show deleted records
+    query = select(User).where(User.is_deleted == True)
+    
+    # Apply search filter
+    if search:
+        search_like = f"%{search}%"
+        query = query.where(
+            (User.username.ilike(search_like)) | (User.email.ilike(search_like))
+        )
+    
+    # Get total count
+    total = session.exec(select(func.count(User.user_code)).where(User.is_deleted == True)).one()
+    
+    # Apply sorting
+    sort_order_desc = sort_order.lower() == "desc"
+    if sort_by.lower() == "username":
+        query = query.order_by(User.username.desc() if sort_order_desc else User.username)
+    elif sort_by.lower() == "email":
+        query = query.order_by(User.email.desc() if sort_order_desc else User.email)
+    elif sort_by.lower() == "deleted_at":
+        query = query.order_by(User.deleted_at.desc() if sort_order_desc else User.deleted_at)
+    else:  # default to user_id
+        query = query.order_by(User.user_id.desc() if sort_order_desc else User.user_id)
+    
+    # Apply pagination
+    if limit > 0:
+        query = query.offset(offset).limit(limit)
+    
+    users = session.exec(query).all()
+    
+    # Convert User objects to UserPublic
+    public_users = [UserPublic.model_validate(user) for user in users]
+    
+    # Calculate pagination metadata
+    returned = len(users)
+    has_next = (offset + returned) < total if limit > 0 else False
+    
+    pagination = PaginationMetadata(
+        total=total,
+        limit=limit,
+        offset=offset,
+        returned=returned,
+        has_next=has_next
+    )
+    
+    return PaginatedResponse(
+        success=True,
+        code=SuccessCode.USERS_RETRIEVED.value,
+        message=f"Retrieved {returned} deleted users",
+        data=public_users,
+        pagination=pagination
+    )
+
+
+@router.get("/all/list")
+def get_all_users_including_deleted(
+    limit: int = Query(10, ge=0, description="Records per page (0 = all records)"),
+    offset: int = Query(0, ge=0, description="Number of records to skip"),
+    search: str = Query(None, description="Search by username or email"),
+    user_type: str = Query(None, description="Filter by user type (USER, STAFF, ADMIN)"),
+    sort_by: str = Query("user_id", description="Sort by field (user_id, username, email, created_at)"),
+    sort_order: str = Query("asc", description="Sort order (asc, desc)"),
+    session: Session = Depends(get_session)
+):
+    """Get all users including soft-deleted (admin endpoint)"""
+    # Build query - include all records
+    query = select(User)
+    
+    # Apply search filter
+    if search:
+        search_like = f"%{search}%"
+        query = query.where(
+            (User.username.ilike(search_like)) | (User.email.ilike(search_like))
+        )
+    
+    # Apply user_type filter
+    if user_type:
+        query = query.where(User.user_type == user_type.upper())
+    
+    # Get total count
+    total = session.exec(select(func.count(User.user_code))).one()
+    
+    # Apply sorting
+    sort_order_desc = sort_order.lower() == "desc"
+    if sort_by.lower() == "username":
+        query = query.order_by(User.username.desc() if sort_order_desc else User.username)
+    elif sort_by.lower() == "email":
+        query = query.order_by(User.email.desc() if sort_order_desc else User.email)
+    elif sort_by.lower() == "created_at":
+        query = query.order_by(User.created_at.desc() if sort_order_desc else User.created_at)
+    else:  # default to user_id
+        query = query.order_by(User.user_id.desc() if sort_order_desc else User.user_id)
+    
+    # Apply pagination
+    if limit > 0:
+        query = query.offset(offset).limit(limit)
+    
+    users = session.exec(query).all()
+    
+    # Convert User objects to UserPublic
+    public_users = [UserPublic.model_validate(user) for user in users]
+    
+    # Calculate pagination metadata
+    returned = len(users)
+    has_next = (offset + returned) < total if limit > 0 else False
+    
+    pagination = PaginationMetadata(
+        total=total,
+        limit=limit,
+        offset=offset,
+        returned=returned,
+        has_next=has_next
+    )
+    
+    return PaginatedResponse(
+        success=True,
+        code=SuccessCode.USERS_RETRIEVED.value,
+        message=f"Retrieved {returned} users (including deleted)",
+        data=public_users,
+        pagination=pagination
+    )
 

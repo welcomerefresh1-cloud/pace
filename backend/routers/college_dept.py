@@ -6,11 +6,14 @@ from models.college_dept import (
     CollegeDept, CollegeDeptCreate, CollegeDeptUpdate, CollegeDeptPublic,
     CollegeDeptBulkCreate, CollegeDeptBulkCreateResponse, CollegeDeptBulkCreateItem,
     CollegeDeptBulkUpdate, CollegeDeptBulkUpdateResponse, CollegeDeptBulkUpdateResult,
-    CollegeDeptBulkDelete, CollegeDeptBulkDeleteResponse, CollegeDeptBulkDeleteResult
+    CollegeDeptBulkDelete, CollegeDeptBulkDeleteResponse, CollegeDeptBulkDeleteResult,
+    CollegeDeptBulkRestore, CollegeDeptBulkRestoreResponse, CollegeDeptBulkRestoreResult
 )
+from models.courses import Course
 from models.response_codes import ErrorCode, SuccessCode, StandardResponse
-from models.pagination import PaginationMetadata
+from models.pagination import PaginatedResponse, PaginationMetadata
 from utils.logging import log_error, log_integrity_error
+from utils.timezone import get_current_time_gmt8
 
 router = APIRouter(prefix="/college-depts", tags=["college-depts"])
 
@@ -283,8 +286,37 @@ def bulk_delete_college_depts(
                 failed_count += 1
                 continue
             
-            # Delete college department
-            session.delete(college_dept)
+            # Check if already deleted
+            if college_dept.is_deleted:
+                results.append(CollegeDeptBulkDeleteResult(
+                    index=index,
+                    college_dept_id=college_dept_id,
+                    success=False,
+                    code=ErrorCode.ALREADY_DELETED.value,
+                    message="College department is already deleted, cannot delete again"
+                ))
+                failed_count += 1
+                continue
+            
+            # Check if college department has active courses referencing it
+            active_courses = session.exec(
+                select(Course).where((Course.college_dept_code == college_dept.college_dept_code) & (Course.is_deleted == False))
+            ).first()
+            if active_courses:
+                results.append(CollegeDeptBulkDeleteResult(
+                    index=index,
+                    college_dept_id=college_dept_id,
+                    success=False,
+                    code=ErrorCode.CANNOT_DELETE_COLLEGE_DEPT_WITH_ACTIVE_COURSES.value,
+                    message="Cannot delete college department with active courses"
+                ))
+                failed_count += 1
+                continue
+            
+            # Soft delete
+            college_dept.is_deleted = True
+            college_dept.deleted_at = get_current_time_gmt8()
+            session.add(college_dept)
             session.flush()
             
             # Record successful deletion
@@ -429,13 +461,14 @@ def get_all_college_depts(
     limit: int = Query(10, ge=0, description="Records per page (0 = all records)"),
     offset: int = Query(0, ge=0, description="Number of records to skip"),
     search: str = Query(None, description="Search by abbreviation or name"),
+    include_deleted: bool = Query(False, description="Include soft-deleted records"),
     sort_by: str = Query("college_dept_id", description="Sort by field (college_dept_id, college_dept_abbv, college_dept_name)"),
     sort_order: str = Query("asc", description="Sort order (asc, desc)"),
     session: Session = Depends(get_session)
-):
+):  
     """Get all college departments with filtering, searching, and sorting"""
     # Build query
-    query = select(CollegeDept)
+    query = select(CollegeDept) if include_deleted else select(CollegeDept).where(CollegeDept.is_deleted == False)
     
     # Apply search filter
     if search:
@@ -447,7 +480,8 @@ def get_all_college_depts(
         )
     
     # Get total count after filters
-    total = session.exec(select(func.count(CollegeDept.college_dept_code)).select_from(query.froms[0]).where(query.whereclause)).one() if query.whereclause else session.exec(select(func.count(CollegeDept.college_dept_code))).one()
+    count_query = select(func.count(CollegeDept.college_dept_code)) if include_deleted else select(func.count(CollegeDept.college_dept_code)).where(CollegeDept.is_deleted == False)
+    total = session.exec(count_query).one()
     
     # Apply sorting
     sort_order_desc = sort_order.lower() == "desc"
@@ -488,7 +522,7 @@ def get_all_college_depts(
 def get_college_dept(college_dept_id: str, session: Session = Depends(get_session)):
     """Get a specific college department by college_dept_id"""
     college_dept = session.exec(
-        select(CollegeDept).where(CollegeDept.college_dept_id == college_dept_id.upper())
+        select(CollegeDept).where((CollegeDept.college_dept_id == college_dept_id.upper()) & (CollegeDept.is_deleted == False))
     ).first()
     
     if not college_dept:
@@ -617,8 +651,35 @@ def delete_college_dept(college_dept_id: str, session: Session = Depends(get_ses
             ).model_dump(mode='json')
         )
     
+    if college_dept.is_deleted:
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.ALREADY_DELETED.value,
+                message="College department is already deleted, cannot delete again"
+            ).model_dump(mode='json')
+        )
+    
+    # Check if college department has active courses referencing it
+    active_courses = session.exec(
+        select(Course).where((Course.college_dept_code == college_dept.college_dept_code) & (Course.is_deleted == False))
+    ).first()
+    if active_courses:
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.CANNOT_DELETE_COLLEGE_DEPT_WITH_ACTIVE_COURSES.value,
+                message="Cannot delete college department with active courses"
+            ).model_dump(mode='json')
+        )
+    
     try:
-        session.delete(college_dept)
+        # Soft delete
+        college_dept.is_deleted = True
+        college_dept.deleted_at = get_current_time_gmt8()
+        session.add(college_dept)
         session.commit()
         return StandardResponse(
             success=True,
@@ -636,3 +697,262 @@ def delete_college_dept(college_dept_id: str, session: Session = Depends(get_ses
                 message="Delete failed: Constraint violation or invalid operation"
             ).model_dump(mode='json')
         )
+
+
+
+
+@router.post("/bulk/restore")
+def bulk_restore_college_depts(
+    data: CollegeDeptBulkRestore,
+    session: Session = Depends(get_session)
+):
+    """Restore multiple soft-deleted college departments"""
+    results = []
+    successful_count = 0
+    failed_count = 0
+    
+    for index, college_dept_id in enumerate(data.ids):
+        try:
+            college_dept = session.exec(
+                select(CollegeDept).where(CollegeDept.college_dept_id == college_dept_id.upper())
+            ).first()
+            
+            if not college_dept:
+                results.append(CollegeDeptBulkRestoreResult(
+                    index=index,
+                    college_dept_id=college_dept_id,
+                    success=False,
+                    code=ErrorCode.COLLEGE_DEPT_NOT_FOUND.value,
+                    message=f"College department '{college_dept_id}' not found"
+                ))
+                failed_count += 1
+                continue
+            
+            if not college_dept.is_deleted:
+                results.append(CollegeDeptBulkRestoreResult(
+                    index=index,
+                    college_dept_id=college_dept_id,
+                    success=False,
+                    code=ErrorCode.INVALID_INPUT.value,
+                    message=f"College department '{college_dept_id}' is not deleted"
+                ))
+                failed_count += 1
+                continue
+            
+            # Restore college department
+            college_dept.is_deleted = False
+            college_dept.deleted_at = None
+            session.add(college_dept)
+            session.flush()
+            
+            # Record successful restoration
+            results.append(CollegeDeptBulkRestoreResult(
+                index=index,
+                college_dept_id=college_dept_id,
+                success=True,
+                code=SuccessCode.COLLEGE_DEPT_RESTORED.value,
+                message="College department restored successfully"
+            ))
+            successful_count += 1
+        
+        except IntegrityError as e:
+            session.rollback()
+            error_code = ErrorCode.INVALID_INPUT.value
+            error_msg = "Restore failed: Constraint violation or related data issue"
+            results.append(CollegeDeptBulkRestoreResult(
+                index=index,
+                college_dept_id=college_dept_id,
+                success=False,
+                code=error_code,
+                message=error_msg
+            ))
+            log_integrity_error("college_depts", "bulk_restore_college_depts", error_code, error_msg, str(e))
+            failed_count += 1
+    
+    session.commit()
+    return StandardResponse(
+        success=failed_count == 0,
+        code=SuccessCode.COLLEGE_DEPTS_BULK_RESTORED.value,
+        message=f"Restore operation completed: {successful_count} succeeded, {failed_count} failed",
+        data=CollegeDeptBulkRestoreResponse(
+            total_items=len(data.ids),
+            successful=successful_count,
+            failed=failed_count,
+            results=results
+        )
+    )
+
+
+@router.post("/{college_dept_id}/restore")
+def restore_college_dept(college_dept_id: str, session: Session = Depends(get_session)):
+    """Restore a soft-deleted college department"""
+    college_dept = session.exec(
+        select(CollegeDept).where(CollegeDept.college_dept_id == college_dept_id.upper())
+    ).first()
+    
+    if not college_dept:
+        log_error("college_depts", "restore_college_dept", ErrorCode.COLLEGE_DEPT_NOT_FOUND.value, f"College department {college_dept_id} not found")
+        raise HTTPException(
+            status_code=404,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.COLLEGE_DEPT_NOT_FOUND.value,
+                message="College department not found"
+            ).model_dump(mode='json')
+        )
+    
+    if not college_dept.is_deleted:
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="College department is not deleted, cannot restore"
+            ).model_dump(mode='json')
+        )
+    
+    try:
+        # Restore soft-deleted college department
+        college_dept.is_deleted = False
+        college_dept.deleted_at = None
+        session.add(college_dept)
+        session.commit()
+        return StandardResponse(
+            success=True,
+            code=SuccessCode.COLLEGE_DEPT_RESTORED.value,
+            message=f"College department {college_dept_id} restored successfully"
+        )
+    except IntegrityError as e:
+        session.rollback()
+        log_integrity_error("college_depts", "restore_college_dept", ErrorCode.INVALID_INPUT.value, "Restore failed", str(e))
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Restore failed: Constraint violation or invalid operation"
+            ).model_dump(mode='json')
+        )
+
+
+@router.get("/deleted/list")
+def get_deleted_college_depts(
+    limit: int = Query(10, ge=0, description="Records per page (0 = all records)"),
+    offset: int = Query(0, ge=0, description="Number of records to skip"),
+    search: str = Query(None, description="Search by abbreviation or name"),
+    sort_by: str = Query("deleted_at", description="Sort by field (college_dept_id, college_dept_abbv, college_dept_name, deleted_at)"),
+    sort_order: str = Query("desc", description="Sort order (asc, desc)"),
+    session: Session = Depends(get_session)
+):
+    """Get all soft-deleted college departments (admin endpoint)"""
+    # Build query - only show deleted records
+    query = select(CollegeDept).where(CollegeDept.is_deleted == True)
+    
+    # Apply search filter
+    if search:
+        search_like = f"%{search}%"
+        query = query.where(
+            (CollegeDept.college_dept_abbv.ilike(search_like)) | (CollegeDept.college_dept_name.ilike(search_like))
+        )
+    
+    # Get total count
+    total = session.exec(select(func.count(CollegeDept.college_dept_code)).where(CollegeDept.is_deleted == True)).one()
+    
+    # Apply sorting
+    sort_order_desc = sort_order.lower() == "desc"
+    if sort_by.lower() == "college_dept_abbv":
+        query = query.order_by(CollegeDept.college_dept_abbv.desc() if sort_order_desc else CollegeDept.college_dept_abbv)
+    elif sort_by.lower() == "college_dept_name":
+        query = query.order_by(CollegeDept.college_dept_name.desc() if sort_order_desc else CollegeDept.college_dept_name)
+    elif sort_by.lower() == "deleted_at":
+        query = query.order_by(CollegeDept.deleted_at.desc() if sort_order_desc else CollegeDept.deleted_at)
+    else:  # default to college_dept_id
+        query = query.order_by(CollegeDept.college_dept_id.desc() if sort_order_desc else CollegeDept.college_dept_id)
+    
+    # Apply pagination
+    if limit > 0:
+        query = query.offset(offset).limit(limit)
+    
+    college_depts = session.exec(query).all()
+    public_depts = [CollegeDeptPublic.model_validate(dept) for dept in college_depts]
+    
+    # Calculate pagination metadata
+    returned = len(college_depts)
+    has_next = (offset + returned) < total if limit > 0 else False
+    
+    pagination = PaginationMetadata(
+        total=total,
+        limit=limit,
+        offset=offset,
+        returned=returned,
+        has_next=has_next
+    )
+    
+    return PaginatedResponse(
+        success=True,
+        code=SuccessCode.COLLEGE_DEPTS_RETRIEVED.value,
+        message=f"Retrieved {returned} deleted college departments",
+        data=public_depts,
+        pagination=pagination
+    )
+
+
+@router.get("/all/list")
+def get_all_college_depts_including_deleted(
+    limit: int = Query(10, ge=0, description="Records per page (0 = all records)"),
+    offset: int = Query(0, ge=0, description="Number of records to skip"),
+    search: str = Query(None, description="Search by abbreviation or name"),
+    sort_by: str = Query("college_dept_id", description="Sort by field (college_dept_id, college_dept_abbv, college_dept_name)"),
+    sort_order: str = Query("asc", description="Sort order (asc, desc)"),
+    session: Session = Depends(get_session)
+):
+    """Get all college departments including soft-deleted (admin endpoint)"""
+    # Build query - include all records
+    query = select(CollegeDept)
+    
+    # Apply search filter
+    if search:
+        search_like = f"%{search}%"
+        query = query.where(
+            (CollegeDept.college_dept_abbv.ilike(search_like)) | (CollegeDept.college_dept_name.ilike(search_like))
+        )
+    
+    # Get total count
+    total = session.exec(select(func.count(CollegeDept.college_dept_code))).one()
+    
+    # Apply sorting
+    sort_order_desc = sort_order.lower() == "desc"
+    if sort_by.lower() == "college_dept_abbv":
+        query = query.order_by(CollegeDept.college_dept_abbv.desc() if sort_order_desc else CollegeDept.college_dept_abbv)
+    elif sort_by.lower() == "college_dept_name":
+        query = query.order_by(CollegeDept.college_dept_name.desc() if sort_order_desc else CollegeDept.college_dept_name)
+    else:  # default to college_dept_id
+        query = query.order_by(CollegeDept.college_dept_id.desc() if sort_order_desc else CollegeDept.college_dept_id)
+    
+    # Apply pagination
+    if limit > 0:
+        query = query.offset(offset).limit(limit)
+    
+    college_depts = session.exec(query).all()
+    public_depts = [CollegeDeptPublic.model_validate(dept) for dept in college_depts]
+    
+    # Calculate pagination metadata
+    returned = len(college_depts)
+    has_next = (offset + returned) < total if limit > 0 else False
+    
+    pagination = PaginationMetadata(
+        total=total,
+        limit=limit,
+        offset=offset,
+        returned=returned,
+        has_next=has_next
+    )
+    
+    return PaginatedResponse(
+        success=True,
+        code=SuccessCode.COLLEGE_DEPTS_RETRIEVED.value,
+        message=f"Retrieved {returned} college departments (including deleted)",
+        data=public_depts,
+        pagination=pagination
+    )
+    
