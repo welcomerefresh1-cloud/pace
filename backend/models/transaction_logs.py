@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime, timezone
-from typing import Optional, Any, Dict
+from typing import Optional, Any
 from sqlmodel import SQLModel, Field
+from sqlalchemy import JSON
 from pydantic import field_serializer
 from utils.timezone import get_current_time_gmt8, GMT8
 
@@ -13,8 +14,8 @@ class TransactionLog(SQLModel, table=True):
     tl_code: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     tl_id: str = Field(max_length=12, unique=True, index=True)  # Human-readable ID like TL-000001
     tl_name: str = Field(max_length=500)  # Descriptive action name (e.g., "CREATED user USER-000001")
-    before: Optional[Dict[str, Any]] = Field(default=None)  # JSON snapshot before operation
-    after: Optional[Dict[str, Any]] = Field(default=None)  # JSON snapshot after operation
+    before: Optional[Any] = Field(default=None, sa_type=JSON)  # JSON snapshot before operation
+    after: Optional[Any] = Field(default=None, sa_type=JSON)  # JSON snapshot after operation
     tl_date: datetime = Field(default_factory=get_current_time_gmt8)  # Timestamp in GMT+8
     performed_by: Optional[uuid.UUID] = Field(default=None)  # UUID of user who performed action
 
@@ -23,8 +24,8 @@ class TransactionLogCreate(SQLModel):
     """Request model for creating transaction log entries"""
     tl_id: str = Field(max_length=12)
     tl_name: str = Field(max_length=500)
-    before: Optional[Dict[str, Any]] = None
-    after: Optional[Dict[str, Any]] = None
+    before: Optional[Any] = None
+    after: Optional[Any] = None
     performed_by: Optional[uuid.UUID] = None
 
 
@@ -32,8 +33,8 @@ class TransactionLogPublic(SQLModel):
     """Public response model for transaction logs"""
     tl_id: str
     tl_name: str
-    before: Optional[Dict[str, Any]] = None
-    after: Optional[Dict[str, Any]] = None
+    before: Optional[Any] = None
+    after: Optional[Any] = None
     tl_date: datetime
     performed_by: Optional[uuid.UUID] = None
     
