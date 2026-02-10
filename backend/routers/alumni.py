@@ -338,13 +338,14 @@ def get_all_alumni(
     offset: int = Query(0, ge=0, description="Number of records to skip"),
     search: str = Query(None, description="Search by first name, last name, email, or username"),
     gender: str = Query(None, description="Filter by gender (M, F, Other)"),
+    include_deleted: bool = Query(False, description="Include soft-deleted records"),
     sort_by: str = Query("alumni_id", description="Sort by field (alumni_id, first_name, last_name, created_at)"),
     sort_order: str = Query("asc", description="Sort order (asc, desc)"),
     session: Session = Depends(get_session)
 ):
     """Get all alumni records with filtering, searching, and sorting"""
     # Build query
-    query = select(Alumni).where(Alumni.is_deleted == False)
+    query = select(Alumni) if include_deleted else select(Alumni).where(Alumni.is_deleted == False)
     
     # Apply search filter
     if search:
@@ -361,7 +362,8 @@ def get_all_alumni(
         query = query.where(Alumni.gender == gender.upper())
     
     # Get total count after filters
-    total = session.exec(select(func.count(Alumni.alumni_code)).select_from(query.froms[0]).where(query.whereclause)).one() if query.whereclause else session.exec(select(func.count(Alumni.alumni_code)).where(Alumni.is_deleted == False)).one()
+    count_query = select(func.count(Alumni.alumni_code)) if include_deleted else select(func.count(Alumni.alumni_code)).where(Alumni.is_deleted == False)
+    total = session.exec(count_query).one()
     
     # Apply sorting
     sort_order_desc = sort_order.lower() == "desc"
@@ -1103,4 +1105,133 @@ def bulk_restore_alumni(
             failed=failed_count,
             results=results
         )
+    )
+
+
+@router.get("/deleted/list")
+def get_deleted_alumni(
+    limit: int = Query(10, ge=0, description="Records per page (0 = all records)"),
+    offset: int = Query(0, ge=0, description="Number of records to skip"),
+    search: str = Query(None, description="Search by first name or last name"),
+    sort_by: str = Query("deleted_at", description="Sort by field (alumni_id, first_name, last_name, deleted_at)"),
+    sort_order: str = Query("desc", description="Sort order (asc, desc)"),
+    session: Session = Depends(get_session)
+):
+    """Get all soft-deleted alumni (admin endpoint)"""
+    # Build query - only show deleted records
+    query = select(Alumni).where(Alumni.is_deleted == True)
+    
+    # Apply search filter
+    if search:
+        search_like = f"%{search}%"
+        query = query.where(
+            (Alumni.first_name.ilike(search_like)) | (Alumni.last_name.ilike(search_like))
+        )
+    
+    # Get total count
+    total = session.exec(select(func.count(Alumni.alumni_code)).where(Alumni.is_deleted == True)).one()
+    
+    # Apply sorting
+    sort_order_desc = sort_order.lower() == "desc"
+    if sort_by.lower() == "first_name":
+        query = query.order_by(Alumni.first_name.desc() if sort_order_desc else Alumni.first_name)
+    elif sort_by.lower() == "last_name":
+        query = query.order_by(Alumni.last_name.desc() if sort_order_desc else Alumni.last_name)
+    elif sort_by.lower() == "deleted_at":
+        query = query.order_by(Alumni.deleted_at.desc() if sort_order_desc else Alumni.deleted_at)
+    else:  # default to alumni_id
+        query = query.order_by(Alumni.alumni_id.desc() if sort_order_desc else Alumni.alumni_id)
+    
+    # Apply pagination
+    if limit > 0:
+        query = query.offset(offset).limit(limit)
+    
+    alumni_list = session.exec(query).all()
+    public_alumni = [AlumniPublic.model_validate(alumni) for alumni in alumni_list]
+    
+    # Calculate pagination metadata
+    returned = len(alumni_list)
+    has_next = (offset + returned) < total if limit > 0 else False
+    
+    pagination = PaginationMetadata(
+        total=total,
+        limit=limit,
+        offset=offset,
+        returned=returned,
+        has_next=has_next
+    )
+    
+    return PaginatedResponse(
+        success=True,
+        code=SuccessCode.ALUMNI_LIST_RETRIEVED.value,
+        message=f"Retrieved {returned} deleted alumni",
+        data=public_alumni,
+        pagination=pagination
+    )
+
+
+@router.get("/all/list")
+def get_all_alumni_including_deleted(
+    limit: int = Query(10, ge=0, description="Records per page (0 = all records)"),
+    offset: int = Query(0, ge=0, description="Number of records to skip"),
+    search: str = Query(None, description="Search by first name, last name, email, or username"),
+    gender: str = Query(None, description="Filter by gender (M, F, Other)"),
+    sort_by: str = Query("alumni_id", description="Sort by field (alumni_id, first_name, last_name, created_at)"),
+    sort_order: str = Query("asc", description="Sort order (asc, desc)"),
+    session: Session = Depends(get_session)
+):
+    """Get all alumni including soft-deleted (admin endpoint)"""
+    # Build query - include all records
+    query = select(Alumni)
+    
+    # Apply search filter
+    if search:
+        search_like = f"%{search}%"
+        query = query.where(
+            (Alumni.first_name.ilike(search_like)) | (Alumni.last_name.ilike(search_like))
+        )
+    
+    # Apply gender filter
+    if gender:
+        query = query.where(Alumni.gender == gender.upper())
+    
+    # Get total count
+    total = session.exec(select(func.count(Alumni.alumni_code))).one()
+    
+    # Apply sorting
+    sort_order_desc = sort_order.lower() == "desc"
+    if sort_by.lower() == "first_name":
+        query = query.order_by(Alumni.first_name.desc() if sort_order_desc else Alumni.first_name)
+    elif sort_by.lower() == "last_name":
+        query = query.order_by(Alumni.last_name.desc() if sort_order_desc else Alumni.last_name)
+    elif sort_by.lower() == "created_at":
+        query = query.order_by(Alumni.created_at.desc() if sort_order_desc else Alumni.created_at)
+    else:  # default to alumni_id
+        query = query.order_by(Alumni.alumni_id.desc() if sort_order_desc else Alumni.alumni_id)
+    
+    # Apply pagination
+    if limit > 0:
+        query = query.offset(offset).limit(limit)
+    
+    alumni_list = session.exec(query).all()
+    public_alumni = [AlumniPublic.model_validate(alumni) for alumni in alumni_list]
+    
+    # Calculate pagination metadata
+    returned = len(alumni_list)
+    has_next = (offset + returned) < total if limit > 0 else False
+    
+    pagination = PaginationMetadata(
+        total=total,
+        limit=limit,
+        offset=offset,
+        returned=returned,
+        has_next=has_next
+    )
+    
+    return PaginatedResponse(
+        success=True,
+        code=SuccessCode.ALUMNI_LIST_RETRIEVED.value,
+        message=f"Retrieved {returned} alumni (including deleted)",
+        data=public_alumni,
+        pagination=pagination
     )

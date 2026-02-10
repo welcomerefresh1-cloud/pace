@@ -304,13 +304,14 @@ def get_all_student_records(
     min_gwa: float = Query(None, description="Filter by minimum GWA"),
     max_gwa: float = Query(None, description="Filter by maximum GWA"),
     course_abbv: str = Query(None, description="Filter by course abbreviation"),
+    include_deleted: bool = Query(False, description="Include soft-deleted records"),
     sort_by: str = Query("student_id", description="Sort by field (student_id, year_graduated, gwa)"),
     sort_order: str = Query("asc", description="Sort order (asc, desc)"),
     session: Session = Depends(get_session)
 ):  
     """Get all student records with filtering, searching, and sorting"""
     # Build query
-    query = select(StudentRecord).where(StudentRecord.is_deleted == False)
+    query = select(StudentRecord) if include_deleted else select(StudentRecord).where(StudentRecord.is_deleted == False)
     
     # Apply search filter
     if search:
@@ -336,7 +337,8 @@ def get_all_student_records(
             query = query.where(StudentRecord.course_code == course.course_code)
     
     # Get total count after filters
-    total = session.exec(select(func.count(StudentRecord.student_code)).select_from(query.froms[0]).where(query.whereclause)).one() if query.whereclause else session.exec(select(func.count(StudentRecord.student_code)).where(StudentRecord.is_deleted == False)).one()
+    count_query = select(func.count(StudentRecord.student_code)) if include_deleted else select(func.count(StudentRecord.student_code)).where(StudentRecord.is_deleted == False)
+    total = session.exec(count_query).one()
     
     # Apply sorting
     sort_order_desc = sort_order.lower() == "desc"
@@ -982,4 +984,144 @@ def bulk_restore_student_records(
             failed=failed_count,
             results=results
         )
+    )
+
+
+@router.get("/deleted/list")
+def get_deleted_student_records(
+    limit: int = Query(10, ge=0, description="Records per page (0 = all records)"),
+    offset: int = Query(0, ge=0, description="Number of records to skip"),
+    search: str = Query(None, description="Search by student ID"),
+    sort_by: str = Query("deleted_at", description="Sort by field (student_id, year_graduated, gwa, deleted_at)"),
+    sort_order: str = Query("desc", description="Sort order (asc, desc)"),
+    session: Session = Depends(get_session)
+):
+    """Get all soft-deleted student records (admin endpoint)"""
+    # Build query - only show deleted records
+    query = select(StudentRecord).where(StudentRecord.is_deleted == True)
+    
+    # Apply search filter
+    if search:
+        search_like = f"%{search}%"
+        query = query.where(StudentRecord.student_id.ilike(search_like))
+    
+    # Get total count
+    total = session.exec(select(func.count(StudentRecord.student_code)).where(StudentRecord.is_deleted == True)).one()
+    
+    # Apply sorting
+    sort_order_desc = sort_order.lower() == "desc"
+    if sort_by.lower() == "year_graduated":
+        query = query.order_by(StudentRecord.year_graduated.desc() if sort_order_desc else StudentRecord.year_graduated)
+    elif sort_by.lower() == "gwa":
+        query = query.order_by(StudentRecord.gwa.desc() if sort_order_desc else StudentRecord.gwa)
+    elif sort_by.lower() == "deleted_at":
+        query = query.order_by(StudentRecord.deleted_at.desc() if sort_order_desc else StudentRecord.deleted_at)
+    else:  # default to student_id
+        query = query.order_by(StudentRecord.student_id.desc() if sort_order_desc else StudentRecord.student_id)
+    
+    # Apply pagination
+    if limit > 0:
+        query = query.offset(offset).limit(limit)
+    
+    records = session.exec(query).all()
+    public_records = [StudentRecordPublic.model_validate(record) for record in records]
+    
+    # Calculate pagination metadata
+    returned = len(records)
+    has_next = (offset + returned) < total if limit > 0 else False
+    
+    pagination = PaginationMetadata(
+        total=total,
+        limit=limit,
+        offset=offset,
+        returned=returned,
+        has_next=has_next
+    )
+    
+    return PaginatedResponse(
+        success=True,
+        code=SuccessCode.STUDENT_RECORDS_RETRIEVED.value,
+        message=f"Retrieved {returned} deleted student records",
+        data=public_records,
+        pagination=pagination
+    )
+
+
+@router.get("/all/list")
+def get_all_student_records_including_deleted(
+    limit: int = Query(10, ge=0, description="Records per page (0 = all records)"),
+    offset: int = Query(0, ge=0, description="Number of records to skip"),
+    search: str = Query(None, description="Search by student ID"),
+    year_graduated: int = Query(None, description="Filter by year graduated"),
+    min_gwa: float = Query(None, description="Filter by minimum GWA"),
+    max_gwa: float = Query(None, description="Filter by maximum GWA"),
+    course_abbv: str = Query(None, description="Filter by course abbreviation"),
+    sort_by: str = Query("student_id", description="Sort by field (student_id, year_graduated, gwa)"),
+    sort_order: str = Query("asc", description="Sort order (asc, desc)"),
+    session: Session = Depends(get_session)
+):
+    """Get all student records including soft-deleted (admin endpoint)"""
+    # Build query - include all records
+    query = select(StudentRecord)
+    
+    # Apply search filter
+    if search:
+        search_like = f"%{search}%"
+        query = query.where(StudentRecord.student_id.ilike(search_like))
+    
+    # Apply year_graduated filter
+    if year_graduated:
+        query = query.where(StudentRecord.year_graduated == year_graduated)
+    
+    # Apply GWA range filter
+    if min_gwa is not None:
+        query = query.where(StudentRecord.gwa >= min_gwa)
+    if max_gwa is not None:
+        query = query.where(StudentRecord.gwa <= max_gwa)
+    
+    # Apply course filter
+    if course_abbv:
+        course = session.exec(
+            select(Course).where(Course.course_abbv == course_abbv.upper())
+        ).first()
+        if course:
+            query = query.where(StudentRecord.course_code == course.course_code)
+    
+    # Get total count
+    total = session.exec(select(func.count(StudentRecord.student_code))).one()
+    
+    # Apply sorting
+    sort_order_desc = sort_order.lower() == "desc"
+    if sort_by.lower() == "year_graduated":
+        query = query.order_by(StudentRecord.year_graduated.desc() if sort_order_desc else StudentRecord.year_graduated)
+    elif sort_by.lower() == "gwa":
+        query = query.order_by(StudentRecord.gwa.desc() if sort_order_desc else StudentRecord.gwa)
+    else:  # default to student_id
+        query = query.order_by(StudentRecord.student_id.desc() if sort_order_desc else StudentRecord.student_id)
+    
+    # Apply pagination
+    if limit > 0:
+        query = query.offset(offset).limit(limit)
+    
+    records = session.exec(query).all()
+    public_records = [StudentRecordPublic.model_validate(record) for record in records]
+    
+    # Calculate pagination metadata
+    returned = len(records)
+    has_next = (offset + returned) < total if limit > 0 else False
+    
+    pagination = PaginationMetadata(
+        total=total,
+        limit=limit,
+        offset=offset,
+        returned=returned,
+        has_next=has_next
+    )
+    
+    return PaginatedResponse(
+        success=True,
+        code=SuccessCode.STUDENT_RECORDS_RETRIEVED.value,
+        message=f"Retrieved {returned} student records (including deleted)",
+        data=public_records,
+        pagination=pagination
     )
