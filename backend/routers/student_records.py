@@ -7,13 +7,15 @@ from models.student_records import (
     StudentRecordCreateSafeDisplay, StudentRecordUpdateSafeDisplay,
     StudentRecordBulkCreate, StudentRecordBulkCreateItem, StudentRecordBulkCreateResponse,
     StudentRecordBulkUpdate, StudentRecordBulkUpdateItem, StudentRecordBulkUpdateResult, StudentRecordBulkUpdateResponse,
-    StudentRecordBulkDelete, StudentRecordBulkDeleteResult, StudentRecordBulkDeleteResponse
+    StudentRecordBulkDelete, StudentRecordBulkDeleteResult, StudentRecordBulkDeleteResponse,
+    StudentRecordBulkRestore, StudentRecordBulkRestoreResult, StudentRecordBulkRestoreResponse
 )
 from models.courses import Course
 from models.alumni import Alumni
 from models.response_codes import ErrorCode, SuccessCode, StandardResponse
 from models.pagination import PaginatedResponse, PaginationMetadata
 from utils.logging import log_error, log_integrity_error
+from utils.timezone import get_current_time_gmt8
 
 router = APIRouter(prefix="/student-records", tags=["student-records"])
 
@@ -305,10 +307,10 @@ def get_all_student_records(
     sort_by: str = Query("student_id", description="Sort by field (student_id, year_graduated, gwa)"),
     sort_order: str = Query("asc", description="Sort order (asc, desc)"),
     session: Session = Depends(get_session)
-):
+):  
     """Get all student records with filtering, searching, and sorting"""
     # Build query
-    query = select(StudentRecord)
+    query = select(StudentRecord).where(StudentRecord.is_deleted == False)
     
     # Apply search filter
     if search:
@@ -334,7 +336,7 @@ def get_all_student_records(
             query = query.where(StudentRecord.course_code == course.course_code)
     
     # Get total count after filters
-    total = session.exec(select(func.count(StudentRecord.student_code)).select_from(query.froms[0]).where(query.whereclause)).one() if query.whereclause else session.exec(select(func.count(StudentRecord.student_code))).one()
+    total = session.exec(select(func.count(StudentRecord.student_code)).select_from(query.froms[0]).where(query.whereclause)).one() if query.whereclause else session.exec(select(func.count(StudentRecord.student_code)).where(StudentRecord.is_deleted == False)).one()
     
     # Apply sorting
     sort_order_desc = sort_order.lower() == "desc"
@@ -375,7 +377,7 @@ def get_student_record(student_id: str, session: Session = Depends(get_session))
     
     """Get a student record by student ID"""
     student = session.exec(
-        select(StudentRecord).where(StudentRecord.student_id == student_id.upper())
+        select(StudentRecord).where((StudentRecord.student_id == student_id.upper()) & (StudentRecord.is_deleted == False))
     ).first()
 
     if not student:
@@ -720,7 +722,22 @@ def bulk_delete_student_records(
                 failed_count += 1
                 continue
             
-            session.delete(student)
+            # Check if already deleted
+            if student.is_deleted:
+                results.append(StudentRecordBulkDeleteResult(
+                    index=index,
+                    student_id=student_id,
+                    success=False,
+                    code=ErrorCode.ALREADY_DELETED.value,
+                    message="Student record is already deleted, cannot delete again"
+                ))
+                failed_count += 1
+                continue
+            
+            # Soft delete
+            student.is_deleted = True
+            student.deleted_at = get_current_time_gmt8()
+            session.add(student)
             session.flush()
             
             # Record successful deletion
@@ -801,8 +818,21 @@ def delete_student_record(student_id: str, session: Session = Depends(get_sessio
             ).model_dump(mode='json')
         )
     
+    if student.is_deleted:
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.ALREADY_DELETED.value,
+                message="Student record is already deleted, cannot delete again"
+            ).model_dump(mode='json')
+        )
+    
     try:
-        session.delete(student)
+        # Soft delete
+        student.is_deleted = True
+        student.deleted_at = get_current_time_gmt8()
+        session.add(student)
         session.commit()
         return StandardResponse(
             success=True,
@@ -819,3 +849,137 @@ def delete_student_record(student_id: str, session: Session = Depends(get_sessio
                 "message": "Delete failed: Constraint violation or invalid operation"
             }
         )
+
+
+@router.post("/{student_id}/restore")
+def restore_student_record(student_id: str, session: Session = Depends(get_session)):
+    """Restore a soft-deleted student record"""
+    student = session.exec(
+        select(StudentRecord).where(StudentRecord.student_id == student_id.upper())
+    ).first()
+    
+    if not student:
+        log_error("student_records", "restore_student_record", ErrorCode.STUDENT_RECORD_NOT_FOUND.value, f"Student record {student_id} not found")
+        raise HTTPException(
+            status_code=404,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.STUDENT_RECORD_NOT_FOUND.value,
+                message="Student record not found"
+            ).model_dump(mode='json')
+        )
+    
+    if not student.is_deleted:
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Student record is not deleted, cannot restore"
+            ).model_dump(mode='json')
+        )
+    
+    try:
+        # Restore soft-deleted student record
+        student.is_deleted = False
+        student.deleted_at = None
+        session.add(student)
+        session.commit()
+        return StandardResponse(
+            success=True,
+            code=SuccessCode.STUDENT_RECORD_RESTORED.value,
+            message=f"Student record {student_id} restored successfully"
+        )
+    except IntegrityError as e:
+        session.rollback()
+        log_integrity_error("student_records", "restore_student_record", ErrorCode.INVALID_INPUT.value, "Restore failed", str(e))
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Restore failed: Constraint violation or invalid operation"
+            ).model_dump(mode='json')
+        )
+
+
+@router.post("/bulk/restore")
+def bulk_restore_student_records(
+    data: StudentRecordBulkRestore,
+    session: Session = Depends(get_session)
+):
+    """Restore multiple soft-deleted student records"""
+    results = []
+    successful_count = 0
+    failed_count = 0
+    
+    for index, student_id in enumerate(data.ids):
+        try:
+            student = session.exec(
+                select(StudentRecord).where(StudentRecord.student_id == student_id.upper())
+            ).first()
+            
+            if not student:
+                results.append(StudentRecordBulkRestoreResult(
+                    index=index,
+                    student_id=student_id,
+                    success=False,
+                    code=ErrorCode.STUDENT_RECORD_NOT_FOUND.value,
+                    message=f"Student record '{student_id}' not found"
+                ))
+                failed_count += 1
+                continue
+            
+            if not student.is_deleted:
+                results.append(StudentRecordBulkRestoreResult(
+                    index=index,
+                    student_id=student_id,
+                    success=False,
+                    code=ErrorCode.INVALID_INPUT.value,
+                    message=f"Student record '{student_id}' is not deleted"
+                ))
+                failed_count += 1
+                continue
+            
+            # Restore student record
+            student.is_deleted = False
+            student.deleted_at = None
+            session.add(student)
+            session.flush()
+            
+            # Record successful restoration
+            results.append(StudentRecordBulkRestoreResult(
+                index=index,
+                student_id=student_id,
+                success=True,
+                code=SuccessCode.STUDENT_RECORD_RESTORED.value,
+                message="Student record restored successfully"
+            ))
+            successful_count += 1
+        
+        except IntegrityError as e:
+            session.rollback()
+            error_code = ErrorCode.INVALID_INPUT.value
+            error_msg = "Restore failed: Constraint violation or related data issue"
+            results.append(StudentRecordBulkRestoreResult(
+                index=index,
+                student_id=student_id,
+                success=False,
+                code=error_code,
+                message=error_msg
+            ))
+            log_integrity_error("student_records", "bulk_restore_student_records", error_code, error_msg, str(e))
+            failed_count += 1
+    
+    session.commit()
+    return StandardResponse(
+        success=len(results) > 0,
+        code=SuccessCode.STUDENT_RECORDS_BULK_RESTORED.value,
+        message=f"Restore operation completed: {successful_count} succeeded, {failed_count} failed",
+        data=StudentRecordBulkRestoreResponse(
+            total_items=len(data.ids),
+            successful=successful_count,
+            failed=failed_count,
+            results=results
+        )
+    )

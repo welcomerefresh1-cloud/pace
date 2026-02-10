@@ -6,12 +6,15 @@ from models.courses import (
     Course, CourseCreate, CourseUpdate, CoursePublic,
     CourseBulkCreate, CourseBulkCreateResponse, CourseBulkCreateItem,
     CourseBulkUpdate, CourseBulkUpdateResponse, CourseBulkUpdateResult,
-    CourseBulkDelete, CourseBulkDeleteResponse, CourseBulkDeleteResult
+    CourseBulkDelete, CourseBulkDeleteResponse, CourseBulkDeleteResult,
+    CourseBulkRestore, CourseBulkRestoreResponse, CourseBulkRestoreResult
 )
 from models.college_dept import CollegeDept
+from models.student_records import StudentRecord
 from models.response_codes import ErrorCode, SuccessCode, StandardResponse
 from models.pagination import PaginationMetadata
 from utils.logging import log_error, log_integrity_error
+from utils.timezone import get_current_time_gmt8
 
 router = APIRouter(prefix="/courses", tags=["courses"])
 
@@ -338,8 +341,38 @@ def bulk_delete_courses(
                 failed_count += 1
                 continue
             
+            # Check if already deleted
+            if course.is_deleted:
+                results.append(CourseBulkDeleteResult(
+                    index=index,
+                    course_id=course_id,
+                    success=False,
+                    code=ErrorCode.ALREADY_DELETED.value,
+                    message="Course is already deleted, cannot delete again"
+                ))
+                failed_count += 1
+                continue
+            
+            # Check if course has active student records referencing it
+            active_students = session.exec(
+                select(StudentRecord).where((StudentRecord.course_code == course.course_code) & (StudentRecord.is_deleted == False))
+            ).first()
+            if active_students:
+                results.append(CourseBulkDeleteResult(
+                    index=index,
+                    course_id=course_id,
+                    success=False,
+                    code=ErrorCode.CANNOT_DELETE_COURSE_WITH_ACTIVE_STUDENT_RECORDS.value,
+                    message="Cannot delete course with active student records"
+                ))
+                failed_count += 1
+                continue
+            
             # Delete course
-            session.delete(course)
+            # Soft delete
+            course.is_deleted = True
+            course.deleted_at = get_current_time_gmt8()
+            session.add(course)
             session.flush()
             
             # Record successful deletion
@@ -511,10 +544,10 @@ def get_all_courses(
     sort_by: str = Query("course_id", description="Sort by field (course_id, course_abbv, course_name)"),
     sort_order: str = Query("asc", description="Sort order (asc, desc)"),
     session: Session = Depends(get_session)
-):
+):  
     """Get all courses with filtering, searching, and sorting"""
     # Build query
-    query = select(Course)
+    query = select(Course).where(Course.is_deleted == False)
     
     # Apply search filter
     if search:
@@ -534,7 +567,7 @@ def get_all_courses(
             query = query.where(Course.college_dept_code == college_dept.college_dept_code)
     
     # Get total count after filters
-    total = session.exec(select(func.count(Course.course_code)).select_from(query.froms[0]).where(query.whereclause)).one() if query.whereclause else session.exec(select(func.count(Course.course_code))).one()
+    total = session.exec(select(func.count(Course.course_code)).select_from(query.froms[0]).where(query.whereclause)).one() if query.whereclause else session.exec(select(func.count(Course.course_code)).where(Course.is_deleted == False)).one()
     
     # Apply sorting
     sort_order_desc = sort_order.lower() == "desc"
@@ -588,7 +621,7 @@ def get_all_courses(
 def get_course(course_id: str, session: Session = Depends(get_session)):
     """Get a specific course by course_id"""
     course = session.exec(
-        select(Course).where(Course.course_id == course_id.upper())
+        select(Course).where((Course.course_id == course_id.upper()) & (Course.is_deleted == False))
     ).first()
     
     if not course:
@@ -756,8 +789,35 @@ def delete_course(course_id: str, session: Session = Depends(get_session)):
             ).model_dump(mode='json')
         )
     
+    if course.is_deleted:
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.ALREADY_DELETED.value,
+                message="Course is already deleted, cannot delete again"
+            ).model_dump(mode='json')
+        )
+    
+    # Check if course has active student records referencing it
+    active_students = session.exec(
+        select(StudentRecord).where((StudentRecord.course_code == course.course_code) & (StudentRecord.is_deleted == False))
+    ).first()
+    if active_students:
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.CANNOT_DELETE_COURSE_WITH_ACTIVE_STUDENT_RECORDS.value,
+                message="Cannot delete course with active student records"
+            ).model_dump(mode='json')
+        )
+    
     try:
-        session.delete(course)
+        # Soft delete
+        course.is_deleted = True
+        course.deleted_at = get_current_time_gmt8()
+        session.add(course)
         session.commit()
         return StandardResponse(
             success=True,
@@ -775,3 +835,137 @@ def delete_course(course_id: str, session: Session = Depends(get_session)):
                 message="Delete failed: Constraint violation or invalid operation"
             ).model_dump(mode='json')
         )
+
+
+@router.post("/{course_id}/restore")
+def restore_course(course_id: str, session: Session = Depends(get_session)):
+    """Restore a soft-deleted course"""
+    course = session.exec(
+        select(Course).where(Course.course_id == course_id.upper())
+    ).first()
+    
+    if not course:
+        log_error("courses", "restore_course", ErrorCode.COURSE_NOT_FOUND.value, f"Course {course_id} not found")
+        raise HTTPException(
+            status_code=404,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.COURSE_NOT_FOUND.value,
+                message="Course not found"
+            ).model_dump(mode='json')
+        )
+    
+    if not course.is_deleted:
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Course is not deleted, cannot restore"
+            ).model_dump(mode='json')
+        )
+    
+    try:
+        # Restore soft-deleted course
+        course.is_deleted = False
+        course.deleted_at = None
+        session.add(course)
+        session.commit()
+        return StandardResponse(
+            success=True,
+            code=SuccessCode.COURSE_RESTORED.value,
+            message=f"Course {course_id} restored successfully"
+        )
+    except IntegrityError as e:
+        session.rollback()
+        log_integrity_error("courses", "restore_course", ErrorCode.INVALID_INPUT.value, "Restore failed", str(e))
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Restore failed: Constraint violation or invalid operation"
+            ).model_dump(mode='json')
+        )
+
+
+@router.post("/bulk/restore")
+def bulk_restore_courses(
+    data: CourseBulkRestore,
+    session: Session = Depends(get_session)
+):
+    """Restore multiple soft-deleted courses"""
+    results = []
+    successful_count = 0
+    failed_count = 0
+    
+    for index, course_id in enumerate(data.ids):
+        try:
+            course = session.exec(
+                select(Course).where(Course.course_id == course_id.upper())
+            ).first()
+            
+            if not course:
+                results.append(CourseBulkRestoreResult(
+                    index=index,
+                    course_id=course_id,
+                    success=False,
+                    code=ErrorCode.COURSE_NOT_FOUND.value,
+                    message=f"Course '{course_id}' not found"
+                ))
+                failed_count += 1
+                continue
+            
+            if not course.is_deleted:
+                results.append(CourseBulkRestoreResult(
+                    index=index,
+                    course_id=course_id,
+                    success=False,
+                    code=ErrorCode.INVALID_INPUT.value,
+                    message=f"Course '{course_id}' is not deleted"
+                ))
+                failed_count += 1
+                continue
+            
+            # Restore course
+            course.is_deleted = False
+            course.deleted_at = None
+            session.add(course)
+            session.flush()
+            
+            # Record successful restoration
+            results.append(CourseBulkRestoreResult(
+                index=index,
+                course_id=course_id,
+                success=True,
+                code=SuccessCode.COURSE_RESTORED.value,
+                message="Course restored successfully"
+            ))
+            successful_count += 1
+        
+        except IntegrityError as e:
+            session.rollback()
+            error_code = ErrorCode.INVALID_INPUT.value
+            error_msg = "Restore failed: Constraint violation or related data issue"
+            results.append(CourseBulkRestoreResult(
+                index=index,
+                course_id=course_id,
+                success=False,
+                code=error_code,
+                message=error_msg
+            ))
+            log_integrity_error("courses", "bulk_restore_courses", error_code, error_msg, str(e))
+            failed_count += 1
+    
+    session.commit()
+    return StandardResponse(
+        success=len(results) > 0,
+        code=SuccessCode.COURSES_BULK_RESTORED.value,
+        message=f"Restore operation completed: {successful_count} succeeded, {failed_count} failed",
+        data=CourseBulkRestoreResponse(
+            total_items=len(data.ids),
+            successful=successful_count,
+            failed=failed_count,
+            results=results
+        )
+    )

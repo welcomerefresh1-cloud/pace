@@ -51,10 +51,8 @@ class AlumniCreate(AlumniBase):
 class AlumniPublic(AlumniBase):
     created_at: datetime
     updated_at: datetime
-    is_deleted: bool
-    deleted_at: Optional[datetime] = None
     
-    @field_serializer('created_at', 'updated_at', 'deleted_at')
+    @field_serializer('created_at', 'updated_at')
     def serialize_datetime(self, value: Optional[datetime]) -> Optional[str]:
         """Convert to GMT+8 and format as YYYY-MM-DD HH:MM:SS without microseconds"""
         if value is None:

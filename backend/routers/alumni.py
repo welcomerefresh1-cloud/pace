@@ -10,13 +10,15 @@ from models.composite import (
     CompleteAlumniRegistration, CompleteAlumniResponse,
     BulkAlumniRegister, BulkAlumniRegistrationResult, BulkAlumniRegisterResponse, BulkAlumniRegistrationItemSafeDisplay,
     BulkAlumniUpdate, BulkAlumniUpdateItem, BulkAlumniUpdateResult, BulkAlumniUpdateResponse,
-    BulkAlumniDelete, BulkAlumniDeleteResult, BulkAlumniDeleteResponse
+    BulkAlumniDelete, BulkAlumniDeleteResult, BulkAlumniDeleteResponse,
+    BulkAlumniRestore, BulkAlumniRestoreResult, BulkAlumniRestoreResponse
 )
 from models.responses import AlumniFullProfile
 from models.response_codes import ErrorCode, SuccessCode, StandardResponse
 from models.pagination import PaginatedResponse, PaginationMetadata
 from utils.logging import log_error, log_integrity_error
 from utils.auth import hash_password
+from utils.timezone import get_current_time_gmt8
 
 router = APIRouter(prefix="/alumni", tags=["alumni"])
 
@@ -342,7 +344,7 @@ def get_all_alumni(
 ):
     """Get all alumni records with filtering, searching, and sorting"""
     # Build query
-    query = select(Alumni)
+    query = select(Alumni).where(Alumni.is_deleted == False)
     
     # Apply search filter
     if search:
@@ -359,7 +361,7 @@ def get_all_alumni(
         query = query.where(Alumni.gender == gender.upper())
     
     # Get total count after filters
-    total = session.exec(select(func.count(Alumni.alumni_code)).select_from(query.froms[0]).where(query.whereclause)).one() if query.whereclause else session.exec(select(func.count(Alumni.alumni_code))).one()
+    total = session.exec(select(func.count(Alumni.alumni_code)).select_from(query.froms[0]).where(query.whereclause)).one() if query.whereclause else session.exec(select(func.count(Alumni.alumni_code)).where(Alumni.is_deleted == False)).one()
     
     # Apply sorting
     sort_order_desc = sort_order.lower() == "desc"
@@ -451,7 +453,7 @@ def get_all_alumni(
 def get_alumni(alumni_id: str, session: Session = Depends(get_session)):
     """Get specific alumni by alumni_id with full profile"""
     alumni = session.exec(
-        select(Alumni).where(Alumni.alumni_id == alumni_id.upper())
+        select(Alumni).where((Alumni.alumni_id == alumni_id.upper()) & (Alumni.is_deleted == False))
     ).first()
     
     if not alumni:
@@ -801,7 +803,32 @@ def bulk_delete_alumni(
                 failed_count += 1
                 continue
             
-            session.delete(alumni)
+            # Check if already deleted
+            if alumni.is_deleted:
+                results.append(BulkAlumniDeleteResult(
+                    index=index,
+                    alumni_id=alumni_id,
+                    success=False,
+                    code=ErrorCode.ALREADY_DELETED.value,
+                    message="Alumni is already deleted, cannot delete again"
+                ))
+                failed_count += 1
+                continue
+            
+            # Cascade soft delete to associated student records
+            student_records = session.exec(
+                select(StudentRecord).where(StudentRecord.alumni_code == alumni.alumni_code)
+            ).all()
+            for student in student_records:
+                if not student.is_deleted:
+                    student.is_deleted = True
+                    student.deleted_at = get_current_time_gmt8()
+                    session.add(student)
+            
+            # Soft delete the alumni
+            alumni.is_deleted = True
+            alumni.deleted_at = get_current_time_gmt8()
+            session.add(alumni)
             session.flush()
             
             # Record successful deletion
@@ -883,8 +910,31 @@ def delete_alumni(alumni_id: str, session: Session = Depends(get_session)):
             ).model_dump(mode='json')
         )
     
+    if alumni.is_deleted:
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.ALREADY_DELETED.value,
+                message="Alumni is already deleted, cannot delete again"
+            ).model_dump(mode='json')
+        )
+    
     try:
-        session.delete(alumni)
+        # Cascade soft delete to associated student records
+        student_records = session.exec(
+            select(StudentRecord).where(StudentRecord.alumni_code == alumni.alumni_code)
+        ).all()
+        for student in student_records:
+            if not student.is_deleted:
+                student.is_deleted = True
+                student.deleted_at = get_current_time_gmt8()
+                session.add(student)
+        
+        # Soft delete the alumni
+        alumni.is_deleted = True
+        alumni.deleted_at = get_current_time_gmt8()
+        session.add(alumni)
         session.commit()
         return StandardResponse(
             success=True,
@@ -902,3 +952,155 @@ def delete_alumni(alumni_id: str, session: Session = Depends(get_session)):
                 message="Delete failed: Constraint violation or invalid operation"
             ).model_dump(mode='json')
         )
+
+
+@router.post("/{alumni_id}/restore")
+def restore_alumni(alumni_id: str, session: Session = Depends(get_session)):
+    """Restore a soft-deleted alumni record"""
+    alumni = session.exec(
+        select(Alumni).where(Alumni.alumni_id == alumni_id.upper())
+    ).first()
+    
+    if not alumni:
+        log_error("alumni", "restore_alumni", ErrorCode.ALUMNI_NOT_FOUND.value, f"Alumni {alumni_id} not found")
+        raise HTTPException(
+            status_code=404,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.ALUMNI_NOT_FOUND.value,
+                message="Alumni not found"
+            ).model_dump(mode='json')
+        )
+    
+    if not alumni.is_deleted:
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Alumni is not deleted, cannot restore"
+            ).model_dump(mode='json')
+        )
+    
+    try:
+        # Cascade restore associated student records
+        student_records = session.exec(
+            select(StudentRecord).where((StudentRecord.alumni_code == alumni.alumni_code) & (StudentRecord.is_deleted == True))
+        ).all()
+        for student in student_records:
+            student.is_deleted = False
+            student.deleted_at = None
+            session.add(student)
+        
+        # Restore soft-deleted alumni
+        alumni.is_deleted = False
+        alumni.deleted_at = None
+        session.add(alumni)
+        session.commit()
+        return StandardResponse(
+            success=True,
+            code=SuccessCode.ALUMNI_RESTORED.value,
+            message=f"Alumni {alumni_id} restored successfully"
+        )
+    except IntegrityError as e:
+        session.rollback()
+        log_integrity_error("alumni", "restore_alumni", ErrorCode.INVALID_INPUT.value, "Restore failed", str(e))
+        raise HTTPException(
+            status_code=400,
+            detail=StandardResponse(
+                success=False,
+                code=ErrorCode.INVALID_INPUT.value,
+                message="Restore failed: Constraint violation or invalid operation"
+            ).model_dump(mode='json')
+        )
+
+
+@router.post("/bulk/restore")
+def bulk_restore_alumni(
+    data: BulkAlumniRestore,
+    session: Session = Depends(get_session)
+):
+    """Restore multiple soft-deleted alumni"""
+    results = []
+    successful_count = 0
+    failed_count = 0
+    
+    for index, alumni_id in enumerate(data.ids):
+        try:
+            alumni = session.exec(
+                select(Alumni).where(Alumni.alumni_id == alumni_id.upper())
+            ).first()
+            
+            if not alumni:
+                results.append(BulkAlumniRestoreResult(
+                    index=index,
+                    alumni_id=alumni_id,
+                    success=False,
+                    code=ErrorCode.ALUMNI_NOT_FOUND.value,
+                    message=f"Alumni '{alumni_id}' not found"
+                ))
+                failed_count += 1
+                continue
+            
+            if not alumni.is_deleted:
+                results.append(BulkAlumniRestoreResult(
+                    index=index,
+                    alumni_id=alumni_id,
+                    success=False,
+                    code=ErrorCode.INVALID_INPUT.value,
+                    message=f"Alumni '{alumni_id}' is not deleted"
+                ))
+                failed_count += 1
+                continue
+            
+            # Cascade restore associated student records
+            student_records = session.exec(
+                select(StudentRecord).where((StudentRecord.alumni_code == alumni.alumni_code) & (StudentRecord.is_deleted == True))
+            ).all()
+            for student in student_records:
+                student.is_deleted = False
+                student.deleted_at = None
+                session.add(student)
+            
+            # Restore alumni
+            alumni.is_deleted = False
+            alumni.deleted_at = None
+            session.add(alumni)
+            session.flush()
+            
+            # Record successful restoration
+            results.append(BulkAlumniRestoreResult(
+                index=index,
+                alumni_id=alumni_id,
+                success=True,
+                code=SuccessCode.ALUMNI_RESTORED.value if hasattr(SuccessCode, 'ALUMNI_RESTORED') else "ALUMNI_RESTORED",
+                message="Alumni restored successfully"
+            ))
+            successful_count += 1
+        
+        except IntegrityError as e:
+            session.rollback()
+            error_code = ErrorCode.INVALID_INPUT.value
+            error_msg = "Restore failed: Constraint violation or related data issue"
+            results.append(BulkAlumniRestoreResult(
+                index=index,
+                alumni_id=alumni_id,
+                success=False,
+                code=error_code,
+                message=error_msg
+            ))
+            log_integrity_error("alumni", "bulk_restore_alumni", error_code, error_msg, str(e))
+            failed_count += 1
+    
+    session.commit()
+    return StandardResponse(
+        success=len(results) > 0,
+        code=SuccessCode.ALUMNI_BULK_RESTORED.value,
+        message=f"Restore operation completed: {successful_count} succeeded, {failed_count} failed",
+        data=BulkAlumniRestoreResponse(
+            total_items=len(data.ids),
+            successful=successful_count,
+            failed=failed_count,
+            results=results
+        )
+    )
