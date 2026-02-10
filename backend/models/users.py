@@ -28,6 +28,9 @@ class User(UserBase, table=True):
     user_code: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     password: str = Field(max_length=255)  # Hashed password
     created_at: datetime = Field(default_factory=get_current_time_gmt8)
+    updated_at: datetime = Field(default_factory=get_current_time_gmt8)
+    is_deleted: bool = Field(default=False)
+    deleted_at: Optional[datetime] = Field(default=None)
 
 
 class UserCreate(SQLModel):
@@ -71,10 +74,15 @@ class UserCreate(SQLModel):
 class UserPublic(UserBase):
     user_type: UserType
     created_at: datetime
+    updated_at: datetime
+    is_deleted: bool
+    deleted_at: Optional[datetime] = None
     
-    @field_serializer('created_at')
-    def serialize_datetime(self, value: datetime) -> str:
+    @field_serializer('created_at', 'updated_at', 'deleted_at')
+    def serialize_datetime(self, value: Optional[datetime]) -> Optional[str]:
         """Convert to GMT+8 and format as YYYY-MM-DD HH:MM:SS without microseconds"""
+        if value is None:
+            return None
         # Convert UTC datetime to GMT+8
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)

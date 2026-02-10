@@ -19,10 +19,12 @@ class Alumni(AlumniBase, table=True):
     __tablename__ = "alumni"
     
     alumni_code: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    user_code: Optional[uuid.UUID] = Field(default=None, foreign_key="users.user_code", ondelete="CASCADE")
-    student_code: Optional[uuid.UUID] = Field(default=None, foreign_key="student_records.student_code", unique=True, ondelete="CASCADE")
+    user_code: Optional[uuid.UUID] = Field(default=None, foreign_key="users.user_code", ondelete="SET NULL")
+    student_code: Optional[uuid.UUID] = Field(default=None, foreign_key="student_records.student_code", unique=True, ondelete="SET NULL")
     created_at: datetime = Field(default_factory=get_current_time_gmt8)
     updated_at: datetime = Field(default_factory=get_current_time_gmt8)
+    is_deleted: bool = Field(default=False)
+    deleted_at: Optional[datetime] = Field(default=None)
 
 
 class AlumniCreate(AlumniBase):
@@ -49,10 +51,14 @@ class AlumniCreate(AlumniBase):
 class AlumniPublic(AlumniBase):
     created_at: datetime
     updated_at: datetime
+    is_deleted: bool
+    deleted_at: Optional[datetime] = None
     
-    @field_serializer('created_at', 'updated_at')
-    def serialize_datetime(self, value: datetime) -> str:
+    @field_serializer('created_at', 'updated_at', 'deleted_at')
+    def serialize_datetime(self, value: Optional[datetime]) -> Optional[str]:
         """Convert to GMT+8 and format as YYYY-MM-DD HH:MM:SS without microseconds"""
+        if value is None:
+            return None
         # Convert UTC datetime to GMT+8
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)

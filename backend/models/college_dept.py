@@ -19,6 +19,8 @@ class CollegeDept(CollegeDeptBase, table=True):
     college_dept_code: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    is_deleted: bool = Field(default=False)
+    deleted_at: Optional[datetime] = Field(default=None)
 
 
 class CollegeDeptCreate(CollegeDeptBase):
@@ -67,10 +69,14 @@ class CollegeDeptPublic(CollegeDeptBase):
     college_dept_id: str
     created_at: datetime
     updated_at: datetime
+    is_deleted: bool
+    deleted_at: Optional[datetime] = None
     
-    @field_serializer('created_at', 'updated_at')
-    def serialize_datetime(self, value: datetime) -> str:
+    @field_serializer('created_at', 'updated_at', 'deleted_at')
+    def serialize_datetime(self, value: Optional[datetime]) -> Optional[str]:
         """Convert to GMT+8 and format as YYYY-MM-DD HH:MM:SS without microseconds"""
+        if value is None:
+            return None
         # Convert UTC datetime to GMT+8
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
