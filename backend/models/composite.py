@@ -177,3 +177,26 @@ class BulkAlumniDeleteResponse(BaseModel):
     successful: int
     failed: int
     results: List[BulkAlumniDeleteResult]
+
+
+# Bulk alumni restore models
+class BulkAlumniRestoreResult(BaseModel):
+    """Individual item result from bulk alumni restore operation"""
+    index: int
+    alumni_id: str
+    success: bool
+    code: str
+    message: str
+
+
+class BulkAlumniRestore(BaseModel):
+    """Bulk alumni restore request"""
+    ids: List[str] = Field(..., min_items=1, max_items=100, description="List of alumni IDs to restore (1-100 items)")
+
+
+class BulkAlumniRestoreResponse(BaseModel):
+    """Bulk alumni restore response"""
+    total_items: int
+    successful: int
+    failed: int
+    results: List[BulkAlumniRestoreResult]

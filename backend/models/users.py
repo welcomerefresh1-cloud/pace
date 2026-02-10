@@ -28,6 +28,9 @@ class User(UserBase, table=True):
     user_code: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     password: str = Field(max_length=255)  # Hashed password
     created_at: datetime = Field(default_factory=get_current_time_gmt8)
+    updated_at: datetime = Field(default_factory=get_current_time_gmt8)
+    is_deleted: bool = Field(default=False)
+    deleted_at: Optional[datetime] = Field(default=None)
 
 
 class UserCreate(SQLModel):
@@ -71,10 +74,13 @@ class UserCreate(SQLModel):
 class UserPublic(UserBase):
     user_type: UserType
     created_at: datetime
+    updated_at: datetime
     
-    @field_serializer('created_at')
-    def serialize_datetime(self, value: datetime) -> str:
+    @field_serializer('created_at', 'updated_at')
+    def serialize_datetime(self, value: Optional[datetime]) -> Optional[str]:
         """Convert to GMT+8 and format as YYYY-MM-DD HH:MM:SS without microseconds"""
+        if value is None:
+            return None
         # Convert UTC datetime to GMT+8
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
@@ -248,4 +254,27 @@ class UserBulkDeleteResponse(BaseModel):
     successful: int = Field(..., description="Number of items successfully deleted")
     failed: int = Field(..., description="Number of items that failed")
     results: List[UserBulkDeleteResult] = Field(..., description="Detailed results for each item")
+
+
+# Bulk user restore models
+class UserBulkRestoreResult(BaseModel):
+    """Individual item result from bulk restore operation"""
+    index: int = Field(..., description="Index in the request list (0-based)")
+    user_id: str = Field(..., description="User ID that was restored")
+    success: bool = Field(..., description="Whether this item was restored successfully")
+    code: str = Field(..., description="Error code (if failed) or success code")
+    message: str = Field(..., description="Detailed message about the result")
+
+
+class UserBulkRestore(BaseModel):
+    """Bulk restore request for users"""
+    ids: List[str] = Field(..., min_items=1, max_items=100, description="List of user IDs to restore (1-100 items)")
+
+
+class UserBulkRestoreResponse(BaseModel):
+    """Bulk restore response for users"""
+    total_items: int = Field(..., description="Total items in request")
+    successful: int = Field(..., description="Number of items successfully restored")
+    failed: int = Field(..., description="Number of items that failed")
+    results: List[UserBulkRestoreResult] = Field(..., description="Detailed results for each item")
 
