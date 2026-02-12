@@ -6,6 +6,7 @@ from .alumni import Alumni
 from .skills import Skills, SkillsList
 from .job_listings import JobListing
 from .transaction_logs import TransactionLog
+from .events import Event, EventRegistration
 
 __all__ = [
     "User",
@@ -16,5 +17,7 @@ __all__ = [
     "Skills",
     "SkillsList",
     "JobListing",
-    "TransactionLog"
+    "TransactionLog",
+    "Event",
+    "EventRegistration"
 ]

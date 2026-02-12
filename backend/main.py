@@ -1,9 +1,8 @@
-# Trigger reload
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from routers import users, courses, college_dept, student_records, alumni, auth, jobs
+from routers import users, courses, college_dept, student_records, alumni, auth, jobs, events, event_registration
 from core.config import settings
 from models.response_codes import StandardResponse, ErrorCode
 from datetime import datetime
@@ -31,6 +30,10 @@ app.include_router(courses.router)
 app.include_router(student_records.router)
 app.include_router(alumni.router)
 app.include_router(jobs.router)
+app.include_router(events.router)
+
+# TODO: Add event_registration router once auth and RBAC are implemented
+# app.include_router(event_registration.router)
 
 
 @app.exception_handler(RequestValidationError)
