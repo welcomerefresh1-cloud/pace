@@ -4,7 +4,7 @@ import { Search, MapPin, Briefcase, Home, RefreshCw, Building2, GraduationCap } 
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Slider } from "@/components/ui/slider";
-import FilterSection from "@/components/dashboard/alumni/FilterSection";
+import FilterSection from "./FilterSection";
 import { jobTypes, experienceLevels, workTypes } from "./constants";
 
 interface JobFiltersProps {

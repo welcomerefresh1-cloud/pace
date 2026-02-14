@@ -1,8 +1,7 @@
-export default function AdminLayout({
+export default function FacultyLayout({
     children,
 }: {
     children: React.ReactNode;
 }) {
     return <div className="min-h-screen bg-white">{children}</div>;
 }
-

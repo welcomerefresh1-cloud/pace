@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 
 import { usePathname } from "next/navigation";
 
@@ -16,7 +17,7 @@ import {
     BellIcon,
     MenuIcon,
     CloseIcon,
-} from "@/components/dashboard/icons";
+} from "../_components/Icons";
 
 const navItems = [
     { name: "Overview", href: "/dashboard/alumni", icon: HomeIcon },
@@ -58,11 +59,11 @@ export default function AlumniLayout({
                 <div className="flex h-[72px] items-center justify-between px-6 border-b border-gray-200/60 bg-white/60 backdrop-blur-sm">
                     <Link href="/" className="flex items-center gap-3 group">
                         <div className="relative h-10 w-10 flex-shrink-0">
-                            <img
+                            <Image
                                 src="/plp-logo.png"
                                 alt="PLP Logo"
-                                width="40"
-                                height="40"
+                                width={40}
+                                height={40}
                                 className="object-contain"
                             />
                         </div>
@@ -118,7 +119,7 @@ export default function AlumniLayout({
                                     `}>
                                         <item.icon />
                                     </span>
-                                    
+
                                     {/* Label */}
                                     <span className="flex-1 font-medium">{item.name}</span>
 

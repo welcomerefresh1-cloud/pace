@@ -2,7 +2,7 @@
 
 
 
-import JobCard from "@/components/dashboard/alumni/JobCard";
+import JobCard from "./JobCard";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface Job {
