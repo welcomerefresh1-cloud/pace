@@ -144,7 +144,7 @@ const mockEvents: Event[] = [
 ];
 
 export default function EventsPage() {
-    const [filteredEvents, setFilteredEvents] = useState<Event[]>(mockEvents);
+    // const [filteredEvents, setFilteredEvents] = useState<Event[]>(mockEvents); // Derived state instead
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedType, setSelectedType] = useState<string | null>(null);
     const [showRegisteredOnly, setShowRegisteredOnly] = useState(false);
@@ -153,7 +153,7 @@ export default function EventsPage() {
     const EVENTS_PER_PAGE = 10;
 
     // Filter and search logic
-    useMemo(() => {
+    const filteredEvents = useMemo(() => {
         let result = mockEvents;
 
         // Search filter
@@ -176,9 +176,10 @@ export default function EventsPage() {
             result = result.filter((event) => event.isRegistered);
         }
 
-        setFilteredEvents(result);
-        setCurrentPage(1);
+        return result;
     }, [searchQuery, selectedType, showRegisteredOnly]);
+
+
 
     const totalEvents = filteredEvents.length;
     const totalPages = Math.ceil(totalEvents / EVENTS_PER_PAGE);
@@ -233,7 +234,10 @@ export default function EventsPage() {
                         EVENTS_PER_PAGE={EVENTS_PER_PAGE}
                         clearFilters={clearFilters}
                         searchQuery={searchQuery}
-                        onSearchChange={setSearchQuery}
+                        onSearchChange={(query) => {
+                            setSearchQuery(query);
+                            setCurrentPage(1);
+                        }}
                     />
                 </div>
 
@@ -242,9 +246,15 @@ export default function EventsPage() {
                     <EventFilters
                         eventTypes={eventTypes}
                         selectedType={selectedType}
-                        setSelectedType={setSelectedType}
+                        setSelectedType={(type) => {
+                            setSelectedType(type);
+                            setCurrentPage(1);
+                        }}
                         showRegisteredOnly={showRegisteredOnly}
-                        setShowRegisteredOnly={setShowRegisteredOnly}
+                        setShowRegisteredOnly={(show) => {
+                            setShowRegisteredOnly(show);
+                            setCurrentPage(1);
+                        }}
                         onClearFilters={clearFilters}
                     />
                 </div>

@@ -159,7 +159,7 @@ export default function JobListingsPage() {
 
         // If using API, jobs are already filtered server-side for keywords/location and JOB TYPE
         // Just apply client-side filters for experience, salary, etc.
-        let filtered = jobData.filter((job) => {
+        const filtered = jobData.filter((job) => {
             // const matchesType = selectedTypes.length === 0 || selectedTypes.includes(job.type); // Handled by API
             const matchesExperience = selectedExperience.length === 0 || selectedExperience.includes(job.experienceLevel);
             const matchesWorkType = selectedWorkTypes.length === 0 || selectedWorkTypes.includes(job.workType);
@@ -171,7 +171,7 @@ export default function JobListingsPage() {
 
 
         return filtered;
-    }, [jobData, selectedTypes, selectedExperience, selectedWorkTypes, salaryRange]);
+    }, [jobData, selectedExperience, selectedWorkTypes, salaryRange]);
 
     // Calculate counts for each filter option
     const getFilterCounts = (filterType: string, option: string) => {

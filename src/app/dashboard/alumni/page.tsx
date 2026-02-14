@@ -1,10 +1,10 @@
-import DashboardHeader from "@/components/dashboard/alumni/DashboardHeader";
-import StatsGrid from "@/components/dashboard/alumni/StatsGrid";
-import RecommendedJobs from "@/components/dashboard/alumni/RecommendedJobs";
-import ProfileStrength from "@/components/dashboard/alumni/ProfileStrength";
-import QuickActions from "@/components/dashboard/alumni/QuickActions";
-import UpcomingEvents from "@/components/dashboard/alumni/UpcomingEvents";
-import RecentActivity from "@/components/dashboard/alumni/RecentActivity";
+import DashboardHeader from "./_components/DashboardHeader";
+import StatsGrid from "./_components/StatsGrid";
+import RecommendedJobs from "./jobs/_components/RecommendedJobs";
+import ProfileStrength from "./_components/ProfileStrength";
+import QuickActions from "./_components/QuickActions";
+import UpcomingEvents from "./events/_components/UpcomingEvents";
+import RecentActivity from "./_components/RecentActivity";
 
 export default function AlumniDashboard() {
     return (

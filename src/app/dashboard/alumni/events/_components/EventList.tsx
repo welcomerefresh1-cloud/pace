@@ -1,6 +1,6 @@
 "use client";
 
-import EventCard from "@/components/dashboard/alumni/EventCard";
+import EventCard from "./EventCard";
 
 interface Event {
     id: number;
@@ -172,18 +172,17 @@ export default function EventList({
 
                                 <div className="flex items-center gap-1.5">
                                     {Array.from({ length: Math.min(5, totalPages) }).map((_, i) => {
-                                        let pageNum = currentPage - 2 + i;
+                                        const pageNum = currentPage - 2 + i;
                                         if (pageNum < 1 || pageNum > totalPages) return null;
 
                                         return (
                                             <button
                                                 key={pageNum}
                                                 onClick={() => setCurrentPage(pageNum)}
-                                                className={`h-10 min-w-10 rounded-lg text-sm font-bold transition-all ${
-                                                    currentPage === pageNum
-                                                        ? 'bg-gradient-to-br from-emerald-600 to-emerald-700 text-white shadow-lg shadow-emerald-600/30'
-                                                        : 'border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
-                                                }`}
+                                                className={`h-10 min-w-10 rounded-lg text-sm font-bold transition-all ${currentPage === pageNum
+                                                    ? 'bg-gradient-to-br from-emerald-600 to-emerald-700 text-white shadow-lg shadow-emerald-600/30'
+                                                    : 'border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                                                    }`}
                                             >
                                                 {pageNum}
                                             </button>
