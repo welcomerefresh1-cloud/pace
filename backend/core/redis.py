@@ -160,3 +160,56 @@ def cache_invalidate_recommended() -> int:
         Number of cache entries deleted
     """
     return cache_delete_pattern("recommended_jobs:*")
+
+
+def cache_get_all_jobs() -> Optional[list]:
+    """
+    Get all cached jobs (bulk cache)
+    
+    Returns:
+        List of jobs or None if not cached
+    """
+    if not redis_client:
+        print(f"[CACHE] Redis not connected")
+        return None
+    
+    try:
+        data = redis_client.get("all_jobs")
+        if data:
+            print(f"[CACHE HIT] all_jobs (bulk cache)")
+            return json.loads(data)
+        else:
+            print(f"[CACHE MISS] all_jobs (bulk cache)")
+    except Exception as e:
+        print(f"[CACHE ERROR] Error retrieving all_jobs: {e}")
+    
+    return None
+
+
+def cache_set_all_jobs(data: list, ttl: int = 21600) -> bool:
+    """
+    Set all jobs in Redis cache (bulk cache)
+    
+    Args:
+        data: List of all jobs to cache
+        ttl: Time to live in seconds (default 6 hours)
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    if not redis_client:
+        print(f"[CACHE] Redis not connected, cannot cache all_jobs")
+        return False
+    
+    try:
+        redis_client.setex(
+            "all_jobs",
+            ttl,
+            json.dumps(data)
+        )
+        print(f"[CACHE SET] all_jobs ({len(data)} jobs, TTL: {ttl}s)")
+        return True
+    except Exception as e:
+        print(f"[CACHE ERROR] Error setting all_jobs: {e}")
+    
+    return False

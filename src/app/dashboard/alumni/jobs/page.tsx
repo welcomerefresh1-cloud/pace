@@ -51,6 +51,10 @@ function convertApiJob(job: JoobleJob, index: number): UnifiedJob {
         snippet = snippet.charAt(0).toUpperCase() + snippet.slice(1);
     }
 
+    // Use API values if available, otherwise fallback to defaults
+    const workType = job.work_type || (job.location?.toLowerCase().includes("remote") ? "Remote" : "On-site");
+    const experienceLevel = job.experience_level || "Not specified";
+
     return {
         id: job.id || `api-${index}`,
         title: job.title,
@@ -61,8 +65,8 @@ function convertApiJob(job: JoobleJob, index: number): UnifiedJob {
         type: job.type || job.job_type || "Full-time",
         postedDate: job.updated ? new Date(job.updated) : new Date(),
         logo: job.company.charAt(0).toUpperCase(),
-        experienceLevel: "Not specified",
-        workType: job.location?.toLowerCase().includes("remote") ? "Remote" : "On-site",
+        experienceLevel: experienceLevel,
+        workType: workType,
         link: job.link,
         snippet: snippet,
     };
@@ -106,6 +110,8 @@ export default function JobListingsPage() {
                 keywords: debouncedSearchQuery || undefined,
                 location: debouncedLocationSearch || "Philippines",
                 job_type: selectedTypes.length > 0 ? selectedTypes[0] : undefined,
+                work_type: selectedWorkTypes.length > 0 ? selectedWorkTypes[0] : undefined,
+                experience_level: selectedExperience.length > 0 ? selectedExperience[0] : undefined,
                 page: currentPage,
                 limit: JOBS_PER_PAGE,
                 has_salary: hasSalary,
@@ -132,7 +138,7 @@ export default function JobListingsPage() {
         } finally {
             setIsLoading(false);
         }
-    }, [debouncedSearchQuery, debouncedLocationSearch, selectedTypes, currentPage, JOBS_PER_PAGE, hasSalary]);
+    }, [debouncedSearchQuery, debouncedLocationSearch, selectedTypes, selectedWorkTypes, selectedExperience, currentPage, JOBS_PER_PAGE, hasSalary]);
 
     // Fetch on mount and when search/location/page changes
     useEffect(() => {
@@ -153,25 +159,19 @@ export default function JobListingsPage() {
     const jobData = apiJobs;
     const totalJobCount = totalApiJobs;
 
-    // Filter and sort jobs (client-side filtering for displayed API results)
+    // Filter and sort jobs (client-side filtering for salary range)
     const filteredJobs = useMemo(() => {
         const isDefaultSalary = salaryRange[0] === 0 && salaryRange[1] === 500;
 
-        // If using API, jobs are already filtered server-side for keywords/location and JOB TYPE
-        // Just apply client-side filters for experience, salary, etc.
+        // Server-side filters: keywords, location, job_type, work_type, experience_level
+        // Client-side filters: salary range only
         const filtered = jobData.filter((job) => {
-            // const matchesType = selectedTypes.length === 0 || selectedTypes.includes(job.type); // Handled by API
-            const matchesExperience = selectedExperience.length === 0 || selectedExperience.includes(job.experienceLevel);
-            const matchesWorkType = selectedWorkTypes.length === 0 || selectedWorkTypes.includes(job.workType);
             const matchesSalary = isDefaultSalary || job.salary === 0 || (job.salary >= salaryRange[0] && job.salary <= salaryRange[1]);
-
-            return matchesExperience && matchesWorkType && matchesSalary;
+            return matchesSalary;
         });
 
-
-
         return filtered;
-    }, [jobData, selectedExperience, selectedWorkTypes, salaryRange]);
+    }, [jobData, salaryRange]);
 
     // Calculate counts for each filter option
     const getFilterCounts = (filterType: string, option: string) => {

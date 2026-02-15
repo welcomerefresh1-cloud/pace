@@ -36,6 +36,22 @@ app.include_router(events.router)
 # app.include_router(event_registration.router)
 
 
+@app.on_event("startup")
+async def startup_event():
+    """Load all jobs into Redis cache on startup"""
+    from sqlmodel import Session
+    from core.database import engine
+    from services.jooble import load_all_jobs_to_cache
+    
+    try:
+        session = Session(engine)
+        job_count = load_all_jobs_to_cache(session)
+        session.close()
+        print(f"[STARTUP] ✓ Cached {job_count} jobs on startup")
+    except Exception as e:
+        print(f"[STARTUP] ⚠ Failed to load jobs into cache: {e}")
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request, exc):
     """Handle Pydantic validation errors and wrap in StandardResponse"""
