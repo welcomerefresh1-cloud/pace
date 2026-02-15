@@ -83,9 +83,13 @@ async def fetch_jobs(
     )
     
     # 1. Check Redis cache first - fastest path
+    print(f"\n[FETCH_JOBS] Searching: keywords={keywords}, location={location}, job_type={job_type}, page={page}")
+    print(f"[FETCH_JOBS] Cache key: {cache_key}")
     cached_result = cache_get(cache_key)
     if cached_result is not None:
+        print(f"[FETCH_JOBS] ✓ Cache hit! Returning cached results")
         return cached_result
+    print(f"[FETCH_JOBS] Cache miss, checking database...")
     
     # Normalize location
     search_location = location
@@ -145,6 +149,7 @@ async def fetch_jobs(
              pass
 
         if not should_fetch_api and len(cached_jobs) >= results_per_page:
+             print(f"[FETCH_JOBS] ✓ DB hit! Found {len(cached_jobs)} jobs in database")
              # Calculate actual total count matching the filters
              # We use the same filters as the main query
              # Avoid subquery for count to prevent aliasing issues
@@ -520,47 +525,7 @@ async def fetch_all_remaining_jobs(
                 print(f"Error in background fetch loop page {p}: {e}")
                 break
     
-    # CLEANUP STALE JOBS
-    # Only perform cleanup if we are confident we fetched ALL available jobs for this query
-    if total_count <= MAX_JOBS_LIMIT:
-        print("Cleaning up stale jobs...")
-        try:
-             with Session(engine) as session:
-                query = select(JobListing).where(JobListing.is_active == True)
-                
-                if keywords:
-                    search_term = f"%{keywords}%"
-                    query = query.where(
-                        or_(
-                            col(JobListing.title).ilike(search_term),
-                            col(JobListing.description).ilike(search_term),
-                            col(JobListing.company).ilike(search_term)
-                        )
-                    )
-                
-                if location and location != "Philippines":
-                     query = query.where(col(JobListing.location).ilike(f"%{location}%"))
-                
-                # Stale jobs are those that:
-                # 1. Match the current search criteria
-                # 2. Were NOT updated in this fetch cycle (updated_at < fetch_start_time)
-                # 3. Are currently active
-                
-                # We need a small buffer for time comparison just in case
-                cutoff_time = fetch_start_time - timedelta(seconds=1) 
-                
-                query = query.where(JobListing.updated_at < cutoff_time)
-                
-                stale_jobs = session.exec(query).all()
-                count = 0
-                for job in stale_jobs:
-                    print(f"Marking stale job as inactive: {job.id} - {job.title}")
-                    job.is_active = False
-                    session.add(job)
-                    count += 1
-                
-                session.commit()
-                print(f"Cleanup complete. Invalidated {count} stale jobs.")
-                
-        except Exception as e:
-            print(f"Error during cache cleanup: {e}")
+    # CLEANUP STALE JOBS - DISABLED for performance
+    # Aggressive cleanup on every search was causing slowdowns with 90+ DB writes per search
+    # Jobs naturally age out via the 1-hour Redis cache and can be manually invalidated if needed
+    # TODO: Implement lazy cleanup - only mark jobs inactive if not seen in 7+ days

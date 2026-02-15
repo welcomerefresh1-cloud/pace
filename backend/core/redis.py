@@ -51,14 +51,18 @@ def cache_get(key: str) -> Optional[dict]:
         Cached data as dict or None if not found
     """
     if not redis_client:
+        print(f"[CACHE] Redis not connected")
         return None
     
     try:
         data = redis_client.get(key)
         if data:
+            print(f"[CACHE HIT] {key}")
             return json.loads(data)
+        else:
+            print(f"[CACHE MISS] {key}")
     except Exception as e:
-        print(f"Error retrieving cache key '{key}': {e}")
+        print(f"[CACHE ERROR] Error retrieving cache key '{key}': {e}")
     
     return None
 
@@ -76,6 +80,7 @@ def cache_set(key: str, data: dict, ttl: int = 3600) -> bool:
         True if successful, False otherwise
     """
     if not redis_client:
+        print(f"[CACHE] Redis not connected, cannot cache")
         return False
     
     try:
@@ -84,9 +89,10 @@ def cache_set(key: str, data: dict, ttl: int = 3600) -> bool:
             ttl,
             json.dumps(data)
         )
+        print(f"[CACHE SET] {key} (TTL: {ttl}s)")
         return True
     except Exception as e:
-        print(f"Error setting cache key '{key}': {e}")
+        print(f"[CACHE ERROR] Error setting cache key '{key}': {e}")
     
     return False
 
