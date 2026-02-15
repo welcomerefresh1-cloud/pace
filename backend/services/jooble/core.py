@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from sqlmodel import Session, select, col, or_, func
 from core.config import settings
 from core.database import engine
+from core.redis import cache_get, cache_set, generate_cache_key, cache_invalidate_job_searches, cache_invalidate_recommended
 from models.job_listings import JobListing
 from fastapi import BackgroundTasks
 
@@ -20,12 +21,25 @@ def get_recommended_jobs(session: Session, limit: int = 3) -> list[dict]:
     """
     Get recommended jobs from the database cache.
     Currently returns random active jobs.
+    Uses Redis caching to avoid repeated database queries.
     """
-    # Get random jobs
+    # Generate cache key
+    cache_key = generate_cache_key("recommended_jobs", limit=limit)
+    
+    # 1. Check Redis cache first
+    cached_result = cache_get(cache_key)
+    if cached_result is not None:
+        return cached_result
+    
+    # 2. Fall back to database query
     query = select(JobListing).where(JobListing.is_active == True).order_by(func.random()).limit(limit)
     jobs = session.exec(query).all()
+    result = [_map_db_job_to_dict(job) for job in jobs]
     
-    return [_map_db_job_to_dict(job) for job in jobs]
+    # 3. Cache the result (1 hour TTL)
+    cache_set(cache_key, result, ttl=3600)
+    
+    return result
 
 
 async def fetch_jobs(
@@ -42,6 +56,7 @@ async def fetch_jobs(
 ) -> dict:
     """
     Fetch job listings from Jooble API for the Philippines.
+    Uses Redis caching for fast retrieval of recently searched results.
     
     Args:
         keywords: Search keywords for job title/description
@@ -55,6 +70,23 @@ async def fetch_jobs(
     Returns:
         dict: Contains 'jobs' list and 'totalCount' of available jobs
     """
+    # Generate Redis cache key based on search parameters
+    cache_key = generate_cache_key(
+        "job_search",
+        keywords=keywords,
+        location=location,
+        job_type=job_type,
+        page=page,
+        results_per_page=results_per_page,
+        salary=salary,
+        has_salary=has_salary
+    )
+    
+    # 1. Check Redis cache first - fastest path
+    cached_result = cache_get(cache_key)
+    if cached_result is not None:
+        return cached_result
+    
     # Normalize location
     search_location = location
     if location and location != "Philippines" and "philippines" not in location.lower():
@@ -138,11 +170,16 @@ async def fetch_jobs(
              # --- FACET COUNTS ---
              facets = _get_facet_counts(session, keywords, location)
              
-             return {
+             result = {
                 "jobs": [_map_db_job_to_dict(job) for job in cached_jobs],
                 "totalCount": total_count,
                 "facets": facets
              }
+             
+             # Cache this result in Redis (1 hour TTL)
+             cache_set(cache_key, result, ttl=3600)
+             
+             return result
 
     # 2. Fetch from API (Cache Miss)
     if not settings.JOOBLE_API_KEY or settings.JOOBLE_API_KEY == "your_api_key_here":
@@ -312,11 +349,16 @@ async def fetch_jobs(
                 query_slice = final_query.offset(user_offset).limit(results_per_page)
                 db_jobs = session.exec(query_slice).all()
                 
-                return {
+                result = {
                     "jobs": [_map_db_job_to_dict(job) for job in db_jobs],
                     "totalCount": total_count_db,
-                     "facets": _get_facet_counts(session, keywords, location)
+                    "facets": _get_facet_counts(session, keywords, location)
                 }
+                
+                # Cache this result in Redis (1 hour TTL)
+                cache_set(cache_key, result, ttl=3600)
+                
+                return result
 
             batch_start_index = (api_page - 1) * JOOBLE_BATCH_SIZE
             req_start_index = (page - 1) * results_per_page
@@ -327,10 +369,15 @@ async def fetch_jobs(
             
             result_slice = normalized_jobs[slice_start:slice_end]
             
-            return {
+            result = {
                 "jobs": result_slice,
                 "totalCount": total_count
             }
+            
+            # Cache this result in Redis (1 hour TTL)
+            cache_set(cache_key, result, ttl=3600)
+            
+            return result
             
     except httpx.HTTPStatusError as e:
         return {
