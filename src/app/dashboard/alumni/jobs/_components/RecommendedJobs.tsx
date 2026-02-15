@@ -40,71 +40,84 @@ export default function RecommendedJobs() {
 
     return (
         <div className="lg:col-span-2 flex flex-col">
-            <div className="h-full flex flex-col rounded-2xl bg-white border border-gray-200/80 p-5 transition-all duration-200 hover:shadow-md">
-                <div className="mb-5 flex items-center justify-between">
-                    <div>
-                        <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
-                            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
-                                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-                                </svg>
-                            </span>
-                            Recommended For You
-                        </h2>
-                        <p className="mt-0.5 text-xs text-gray-500">Based on your profile and preferences</p>
+            <div className="group/card h-full flex flex-col rounded-2xl bg-white border border-gray-100 overflow-hidden transition-all duration-300 hover:shadow-xl hover:shadow-amber-100/30 hover:border-amber-100/60">
+                {/* Decorative top gradient bar */}
+
+
+                <div className="flex-1 flex flex-col p-6">
+                    {/* Header */}
+                    <div className="mb-6 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="relative">
+                                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-lg shadow-amber-200/50">
+                                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                                    </svg>
+                                </div>
+                            </div>
+                            <div>
+                                <h2 className="text-base font-bold text-gray-900">Recommended For You</h2>
+                                <p className="text-xs text-gray-500">Curated based on your profile &amp; skills</p>
+                            </div>
+                        </div>
+                        <Link href="/dashboard/alumni/jobs" className="text-[11px] font-semibold text-gray-500 hover:text-gray-900 transition-all duration-200 px-3 py-1.5 rounded-lg hover:bg-gray-50 ring-1 ring-gray-100/60 hover:ring-gray-200">
+                            View All
+                        </Link>
                     </div>
-                    <Link href="/dashboard/alumni/jobs" className="group text-xs font-medium text-emerald-600 hover:text-emerald-700 flex items-center gap-1 transition-colors">
-                        View all
-                        <svg className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                    </Link>
-                </div>
-                <div className="flex-1 flex flex-col gap-3">
-                    {isLoading ? (
-                        <div className="flex flex-col gap-3">
-                            {[1, 2, 3].map((i) => (
-                                <div key={i} className="flex items-start gap-4 p-4 rounded-xl border border-gray-100">
-                                    <Skeleton className="h-10 w-10 rounded-lg flex-shrink-0" />
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex justify-between items-start mb-2">
-                                            <div className="space-y-1.5">
-                                                <Skeleton className="h-4 w-48" />
-                                                <Skeleton className="h-3.5 w-32" />
+
+                    {/* Job Cards */}
+                    <div className="flex-1 flex flex-col gap-3">
+                        {isLoading ? (
+                            <div className="flex flex-col gap-3">
+                                {[1, 2, 3].map((i) => (
+                                    <div key={i} className="flex items-start gap-4 p-4 rounded-xl bg-gray-50/50 border border-gray-100/50 animate-pulse">
+                                        <Skeleton className="h-11 w-11 rounded-xl flex-shrink-0" />
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex justify-between items-start mb-2.5">
+                                                <div className="space-y-2">
+                                                    <Skeleton className="h-4 w-48" />
+                                                    <Skeleton className="h-3.5 w-32" />
+                                                </div>
+                                                <Skeleton className="h-6 w-20 rounded-full" />
                                             </div>
-                                            <Skeleton className="h-5 w-20 rounded-full" />
-                                        </div>
-                                        <div className="space-y-1.5 mb-3">
-                                            <Skeleton className="h-3.5 w-full" />
-                                            <Skeleton className="h-3.5 w-5/6" />
-                                        </div>
-                                        <div className="flex gap-4">
-                                            <Skeleton className="h-3.5 w-32" />
-                                            <Skeleton className="h-3.5 w-24" />
+                                            <div className="space-y-1.5 mb-3">
+                                                <Skeleton className="h-3 w-full" />
+                                                <Skeleton className="h-3 w-4/5" />
+                                            </div>
+                                            <div className="flex gap-4">
+                                                <Skeleton className="h-3.5 w-28" />
+                                                <Skeleton className="h-3.5 w-24" />
+                                            </div>
                                         </div>
                                     </div>
+                                ))}
+                            </div>
+                        ) : jobs.length > 0 ? (
+                            jobs.map((job, idx) => (
+                                <JobCard
+                                    key={job.id || idx}
+                                    title={job.title}
+                                    company={job.company}
+                                    location={job.location}
+                                    salary={formatSalary(job.salary || job.raw_salary || "")}
+                                    type={job.type || "Full-time"}
+                                    logo={job.company.charAt(0).toUpperCase()}
+                                    className="flex-1"
+                                    description={formatSnippet(job.snippet || job.description || "")}
+                                />
+                            ))
+                        ) : (
+                            <div className="flex-1 flex flex-col items-center justify-center min-h-[200px] rounded-xl bg-gradient-to-br from-gray-50/80 to-amber-50/30 border border-dashed border-gray-200">
+                                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-100 to-orange-100 mb-3">
+                                    <svg className="h-7 w-7 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                    </svg>
                                 </div>
-                            ))}
-                        </div>
-                    ) : jobs.length > 0 ? (
-                        jobs.map((job, idx) => (
-                            <JobCard
-                                key={job.id || idx}
-                                title={job.title}
-                                company={job.company}
-                                location={job.location}
-                                salary={formatSalary(job.salary || job.raw_salary || "")}
-                                type={job.type || "Full-time"}
-                                logo={job.company.charAt(0).toUpperCase()}
-                                className="flex-1"
-                                description={formatSnippet(job.snippet || job.description || "")}
-                            />
-                        ))
-                    ) : (
-                        <div className="flex-1 flex items-center justify-center min-h-[200px] text-sm text-gray-400">
-                            No recommendations available at the moment.
-                        </div>
-                    )}
+                                <p className="text-sm font-semibold text-gray-600">No recommendations yet</p>
+                                <p className="text-xs text-gray-400 mt-1">Complete your profile to get personalized matches</p>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>

@@ -8,13 +8,16 @@ import RecentActivity from "./_components/RecentActivity";
 
 export default function AlumniDashboard() {
     return (
-        <div className="space-y-6">
+        <div className="space-y-5">
+            {/* Hero */}
             <DashboardHeader />
 
+            {/* Stats with sparklines */}
             <StatsGrid />
 
-            {/* Main Grid */}
+            {/* Main Content - Bento Grid */}
             <div className="grid gap-5 lg:grid-cols-3">
+                {/* Jobs takes 2 cols */}
                 <RecommendedJobs />
 
                 {/* Right Column */}
