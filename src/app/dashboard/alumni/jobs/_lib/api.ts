@@ -19,6 +19,8 @@ export interface JoobleJob {
     job_type?: string;
     description?: string;
     raw_salary?: string;
+    work_type?: string;
+    experience_level?: string;
 }
 
 export interface JobSearchResponse {
@@ -39,6 +41,8 @@ export interface JobSearchParams {
     limit?: number;
     salary?: number;
     job_type?: string;
+    work_type?: string;
+    experience_level?: string;
     has_salary?: boolean;
 }
 
@@ -54,6 +58,8 @@ export async function searchJobs(params: JobSearchParams = {}): Promise<JobSearc
     if (params.limit) searchParams.set("limit", params.limit.toString());
     if (params.salary) searchParams.set("salary", params.salary.toString());
     if (params.job_type) searchParams.set("job_type", params.job_type);
+    if (params.work_type) searchParams.set("work_type", params.work_type);
+    if (params.experience_level) searchParams.set("experience_level", params.experience_level);
     if (params.has_salary) searchParams.set("has_salary", "true");
 
     try {
