@@ -1,34 +1,50 @@
 import Link from "next/link";
 
 export default function ProfileStrength() {
+    const percentage = 75;
+    const circumference = 2 * Math.PI * 40;
+    const filled = (percentage / 100) * circumference;
+
     return (
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 p-5 text-white">
-            <div className="absolute -bottom-6 -right-6 h-24 w-24 rounded-full bg-white/10 blur-xl" />
+        <div className="rounded-2xl bg-gradient-to-br from-emerald-500 via-emerald-500 to-teal-500 p-5 text-white relative overflow-hidden">
+            {/* Decorative */}
+            <div className="absolute -top-10 -right-10 w-32 h-32 rounded-full bg-white/5 blur-2xl" />
+            <div className="absolute -bottom-8 -left-8 w-24 h-24 rounded-full bg-teal-400/20 blur-xl" />
 
-            <div className="relative">
-                <div className="flex items-center justify-between">
-                    <h3 className="font-bold text-sm">Profile Strength</h3>
-                    <span className="rounded-full bg-white/20 backdrop-blur-sm px-2.5 py-0.5 text-xs font-bold">75%</span>
-                </div>
-
-                {/* Progress bar */}
-                <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/20">
-                    <div className="h-full w-3/4 rounded-full bg-white transition-all duration-500" />
-                </div>
-
-                <p className="mt-3 text-xs text-emerald-100">
-                    Add your work experience to boost your profile visibility.
-                </p>
-
-                <Link
-                    href="/dashboard/alumni/profile"
-                    className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-white px-3.5 py-2 text-xs font-semibold text-emerald-700 transition-all hover:bg-emerald-50 hover:shadow-md"
-                >
-                    Complete Profile
-                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            <div className="relative flex items-center gap-4">
+                {/* Circular Progress */}
+                <div className="relative flex-shrink-0">
+                    <svg className="w-24 h-24 -rotate-90" viewBox="0 0 96 96">
+                        <circle cx="48" cy="48" r="40" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="6" />
+                        <circle
+                            cx="48" cy="48" r="40" fill="none"
+                            stroke="white" strokeWidth="6"
+                            strokeLinecap="round"
+                            strokeDasharray={`${filled} ${circumference}`}
+                            className="transition-all duration-1000"
+                        />
                     </svg>
-                </Link>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="text-xl font-extrabold">{percentage}%</span>
+                    </div>
+                </div>
+
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-sm">Profile Strength</h3>
+                    <p className="text-xs text-emerald-100 mt-1 leading-relaxed">
+                        Add work experience and upload your resume to reach 100%.
+                    </p>
+                    <Link
+                        href="/dashboard/alumni/profile"
+                        className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-white/20 backdrop-blur-sm px-3 py-1.5 text-xs font-semibold transition-all hover:bg-white/30 border border-white/10"
+                    >
+                        Complete Profile
+                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                        </svg>
+                    </Link>
+                </div>
             </div>
         </div>
     );

@@ -18,6 +18,7 @@ import {
     MenuIcon,
     CloseIcon,
 } from "../_components/Icons";
+import DateWidget from "../_components/DateWidget";
 
 const navItems = [
     { name: "Overview", href: "/dashboard/alumni", icon: HomeIcon },
@@ -226,15 +227,7 @@ export default function AlumniLayout({
                         </button>
                         <div className="flex items-center gap-3">
                             {/* Date Badge */}
-                            <div className="hidden md:flex items-center gap-0 rounded-lg overflow-hidden border border-gray-200 shadow-sm">
-                                <div className="flex items-center justify-center w-11 h-11 bg-emerald-500 text-white">
-                                    <span className="text-lg font-bold">9</span>
-                                </div>
-                                <div className="flex flex-col justify-center px-3 py-1 bg-white">
-                                    <span className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Feb 2026</span>
-                                    <span className="text-[10px] text-gray-400 font-medium">Monday</span>
-                                </div>
-                            </div>
+                            <DateWidget />
                             <div className="h-8 w-px bg-gray-200 hidden md:block" />
                             <div>
                                 <h1 className="text-base font-semibold text-gray-900">Welcome back, Juan!</h1>

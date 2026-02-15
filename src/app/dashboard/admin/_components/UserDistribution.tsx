@@ -1,0 +1,168 @@
+"use client";
+
+const segments = [
+    { label: "Alumni", value: 892, color: "#10b981", ringColor: "ring-emerald-100", barBg: "bg-emerald-100", pct: 71.5 },
+    { label: "Employers", value: 243, color: "#3b82f6", ringColor: "ring-blue-100", barBg: "bg-blue-100", pct: 19.5 },
+    { label: "Faculty", value: 67, color: "#8b5cf6", ringColor: "ring-violet-100", barBg: "bg-violet-100", pct: 5.4 },
+    { label: "Admin", value: 45, color: "#f59e0b", ringColor: "ring-amber-100", barBg: "bg-amber-100", pct: 3.6 },
+];
+
+export default function UserDistribution() {
+    const total = 1247;
+    const radius = 46;
+    const strokeWidth = 11;
+    const circumference = 2 * Math.PI * radius;
+    let cumulativeOffset = 0;
+
+    return (
+        <div className="group relative rounded-2xl bg-white border border-gray-100/80 shadow-sm transition-all duration-500 hover:shadow-xl hover:shadow-blue-100/20 hover:border-gray-200/80 overflow-hidden flex flex-col">
+
+
+            {/* Header */}
+            <div className="px-6 pt-5 pb-4 flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25">
+                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 className="text-[13px] font-semibold text-gray-900 tracking-tight">User Distribution</h3>
+                        <p className="text-[11px] text-gray-400 mt-0.5">Breakdown by role</p>
+                    </div>
+                </div>
+                <div className="flex items-center gap-2 bg-gray-50/80 rounded-full px-3 py-1.5 ring-1 ring-gray-100/60">
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-[11px] font-semibold text-gray-500">{total.toLocaleString()} users</span>
+                </div>
+            </div>
+
+            {/* Chart + Legend */}
+            <div className="px-6 pb-2 flex-1">
+                <div className="flex items-center gap-8">
+                    {/* Donut Chart */}
+                    <div className="relative flex-shrink-0">
+                        <svg className="w-[160px] h-[160px]" viewBox="0 0 120 120">
+                            {/* Background track ring */}
+                            <circle
+                                cx="60" cy="60" r={radius}
+                                fill="none"
+                                strokeWidth={strokeWidth}
+                                stroke="#f1f5f9"
+                            />
+                            {/* Inner subtle ring */}
+                            <circle
+                                cx="60" cy="60" r={radius - strokeWidth / 2 - 3}
+                                fill="none"
+                                strokeWidth="0.5"
+                                stroke="#e2e8f0"
+                                strokeDasharray="2 3"
+                                opacity="0.5"
+                            />
+                            {/* Outer subtle ring */}
+                            <circle
+                                cx="60" cy="60" r={radius + strokeWidth / 2 + 3}
+                                fill="none"
+                                strokeWidth="0.5"
+                                stroke="#e2e8f0"
+                                strokeDasharray="2 3"
+                                opacity="0.5"
+                            />
+                            {/* Segments */}
+                            <g style={{ transform: "rotate(-90deg)", transformOrigin: "60px 60px" }}>
+                                {segments.map((seg) => {
+                                    const dash = (seg.pct / 100) * circumference;
+                                    const gap = circumference - dash;
+                                    const offset = cumulativeOffset;
+                                    cumulativeOffset += dash;
+                                    return (
+                                        <circle
+                                            key={seg.label}
+                                            cx="60" cy="60" r={radius}
+                                            fill="none"
+                                            strokeWidth={strokeWidth}
+                                            strokeLinecap="round"
+                                            stroke={seg.color}
+                                            strokeDasharray={`${dash - 3} ${gap + 3}`}
+                                            strokeDashoffset={-offset}
+                                            className="transition-all duration-700"
+                                        />
+                                    );
+                                })}
+                            </g>
+                        </svg>
+
+                        {/* Center label */}
+                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                            <span className="text-[9px] text-gray-400 font-medium uppercase tracking-widest">Total</span>
+                            <span className="text-[22px] font-extrabold text-gray-900 leading-tight -mt-0.5">
+                                {total.toLocaleString()}
+                            </span>
+                            <span className="text-[10px] text-gray-400 font-medium">users</span>
+                        </div>
+                    </div>
+
+                    {/* Legend with progress bars */}
+                    <div className="flex-1 space-y-4">
+                        {segments.map((seg) => (
+                            <div key={seg.label}>
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <div className="flex items-center gap-2.5">
+                                        <div
+                                            className="w-2.5 h-2.5 rounded-full ring-2 ring-offset-1"
+                                            style={{
+                                                backgroundColor: seg.color,
+                                                // @ts-expect-error ring color via style
+                                                "--tw-ring-color": `${seg.color}30`,
+                                            }}
+                                        />
+                                        <span className="text-xs font-medium text-gray-600">{seg.label}</span>
+                                    </div>
+                                    <div className="flex items-baseline gap-2">
+                                        <span className="text-sm font-bold text-gray-900 tabular-nums">
+                                            {seg.value.toLocaleString()}
+                                        </span>
+                                        <span className="text-[10px] text-gray-400 font-medium tabular-nums w-[38px] text-right">
+                                            {seg.pct}%
+                                        </span>
+                                    </div>
+                                </div>
+                                {/* Progress bar */}
+                                <div className="h-[6px] bg-gray-100 rounded-full overflow-hidden">
+                                    <div
+                                        className="h-full rounded-full transition-all duration-1000 ease-out"
+                                        style={{
+                                            width: `${seg.pct}%`,
+                                            background: `linear-gradient(90deg, ${seg.color}90, ${seg.color})`,
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            {/* Bottom summary strip */}
+            <div className="px-6 pb-5 pt-3 mt-auto">
+                <div className="flex items-center justify-between bg-gradient-to-b from-gray-50/80 to-gray-50/40 rounded-xl py-3 px-4 ring-1 ring-gray-100/60">
+                    <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-lg bg-emerald-50 flex items-center justify-center">
+                            <svg className="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                        </div>
+                        <div>
+                            <p className="text-[11px] font-semibold text-gray-700">Largest group</p>
+                            <p className="text-[10px] text-gray-400">Alumni dominates at 71.5%</p>
+                        </div>
+                    </div>
+                    <div className="text-right">
+                        <p className="text-sm font-extrabold text-emerald-600">892</p>
+                        <p className="text-[10px] text-gray-400">alumni</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}

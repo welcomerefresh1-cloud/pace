@@ -4,48 +4,48 @@ import Link from "next/link";
 
 const actions = [
     {
-        label: "Upload Resume",
-        description: "Update your CV",
-        href: "/dashboard/alumni/profile",
-        icon: "M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12",
+        label: "Schedule Session",
+        description: "Manage student meetings",
+        href: "/dashboard/faculty/students",
+        icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",
         color: "#10b981",
         gradient: "from-emerald-500 to-emerald-600",
         bgTint: "bg-emerald-50",
         ringTint: "ring-emerald-100/60",
     },
     {
-        label: "Track Applications",
-        description: "Status updates",
-        href: "/dashboard/alumni/applications",
-        icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2",
+        label: "Create Event",
+        description: "Schedule new event",
+        href: "/dashboard/faculty/events",
+        icon: "M12 6v6m0 0v6m0-6h6m-6 0H6",
         color: "#3b82f6",
         gradient: "from-blue-500 to-blue-600",
         bgTint: "bg-blue-50",
         ringTint: "ring-blue-100/60",
     },
     {
-        label: "Find Events",
-        description: "Networking events",
-        href: "/dashboard/alumni/events",
-        icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",
+        label: "View Job Board",
+        description: "Browse opportunities",
+        href: "/dashboard/faculty/jobs",
+        icon: "M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z",
         color: "#8b5cf6",
         gradient: "from-violet-500 to-violet-600",
         bgTint: "bg-violet-50",
         ringTint: "ring-violet-100/60",
     },
     {
-        label: "Settings",
-        description: "Account settings",
-        href: "/dashboard/alumni/settings",
-        icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z",
-        color: "#64748b",
-        gradient: "from-slate-500 to-slate-600",
-        bgTint: "bg-slate-50",
-        ringTint: "ring-slate-100/60",
+        label: "View Reports",
+        description: "Check analytics",
+        href: "/dashboard/faculty/reports",
+        icon: "M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
+        color: "#f59e0b",
+        gradient: "from-amber-500 to-amber-600",
+        bgTint: "bg-amber-50",
+        ringTint: "ring-amber-100/60",
     },
 ];
 
-export default function QuickActions() {
+export default function FacultyQuickActions() {
     return (
         <div className="group relative rounded-2xl bg-white border border-gray-100/80 shadow-sm transition-all duration-500 hover:shadow-xl hover:shadow-gray-200/20 hover:border-gray-200/80 overflow-hidden flex flex-col">
 
